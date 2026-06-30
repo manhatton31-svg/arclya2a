@@ -1,0 +1,15 @@
+{
+  "name": "get_folders",
+  "description": "Use this when the user wants to browse available Gamma folders or search for a specific folder by name.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "description": "Search folders by name (optional, omit to return all folders)"
+      }
+    },
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+}

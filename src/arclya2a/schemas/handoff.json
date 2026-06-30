@@ -1,0 +1,58 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "HandoffPayload",
+  "type": "object",
+  "required": ["agent_id", "status", "next_action", "ssot", "memory_summary", "validation"],
+  "properties": {
+    "agent_id": { "type": "string" },
+    "status": { "type": "string", "enum": ["COMPLETE", "EMERGENCY_STOP", "IN_PROGRESS"] },
+    "next_action": { "type": "string" },
+    "ssot": {
+      "type": "object",
+      "required": ["deal_id", "summary"],
+      "properties": {
+        "deal_id": { "type": "string" },
+        "summary": { "type": "string" },
+        "customer": { "type": "object" },
+        "deal_value_usd": { "type": "number" },
+        "stage": { "type": "string" },
+        "metadata": { "type": "object" }
+      }
+    },
+    "memory_summary": { "type": "string", "minLength": 1 },
+    "validation": {
+      "type": "object",
+      "required": ["confidence", "check"],
+      "properties": {
+        "confidence": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "check": { "type": "string", "minLength": 1 }
+      }
+    },
+    "feedback": {
+      "type": "object",
+      "properties": {
+        "from_agent": { "type": "string" },
+        "to_agent": { "type": "string" },
+        "message": { "type": "string", "maxLength": 500 },
+        "severity": { "type": "string", "enum": ["info", "warn", "error"] }
+      }
+    },
+    "preference_handshake": {
+      "type": "object",
+      "properties": {
+        "format": { "type": "string" },
+        "accepted": { "type": "boolean" },
+        "preferences": { "type": "object" }
+      }
+    },
+    "payload": { "type": "object" },
+    "handoff_id": { "type": "string" },
+    "timestamp": { "type": "string" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "COMPLETE" } } },
+      "then": { "required": ["next_action"] }
+    }
+  ]
+}

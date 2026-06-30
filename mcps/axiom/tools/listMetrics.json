@@ -1,0 +1,29 @@
+{
+  "name": "listMetrics",
+  "description": "List all available metric names with metadata in a metrics dataset (kind \"otel-metrics-v1\") using the v2 metrics info response format. Start here when query semantics matter. Returns metric type, temporality, and unit metadata to help choose between avg, rate, increase, histogram bucketing, and related query strategies.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "datasetName": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The dataset name. You can find an list of datasets using the `listDatasets()` tool."
+      },
+      "startTime": {
+        "type": "string",
+        "default": "now-30m",
+        "description": "Start time for the query range. A fixed (RFC3339) or relative (now, now-5m) time value. Defaults to \"now-30m\"."
+      },
+      "endTime": {
+        "type": "string",
+        "default": "now",
+        "description": "End time for the query range. A fixed (RFC3339) or relative (now, now-5m) time value. Defaults to \"now\"."
+      }
+    },
+    "required": [
+      "datasetName"
+    ],
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+}

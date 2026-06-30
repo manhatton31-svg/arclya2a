@@ -1,0 +1,24 @@
+{
+  "name": "find_organizations",
+  "description": "Find organizations that the user has access to in Sentry.\n\nUse this tool when you need to:\n- View organizations in Sentry\n- Find an organization's slug to aid other tool requests\n- Search for specific organizations by name or slug\n\nReturns up to 25 results. If you hit this limit, use the query parameter to narrow down results.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "anyOf": [
+          {
+            "type": "string",
+            "description": "Search query to filter results by name or slug. Use this to narrow down results when there are many items."
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Search query to filter results by name or slug. Use this to narrow down results when there are many items.",
+        "default": null
+      }
+    },
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+}

@@ -1,0 +1,8 @@
+[
+  {
+    "campaign_id": "camp_demo_001",
+    "predicted": { "open_rate": 0.25, "reply_rate": 0.08, "conversion_rate": 0.03 },
+    "actual": { "open_rate": 0.18, "reply_rate": 0.05, "conversion_rate": 0.02 },
+    "timestamp": "2026-06-30T00:00:00Z"
+  }
+]

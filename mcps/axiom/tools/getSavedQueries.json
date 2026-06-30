@@ -1,0 +1,9 @@
+{
+  "name": "getSavedQueries",
+  "description": "Retrieve saved/starred queries from Axiom - shows APL queries that users have bookmarked for reuse",
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {}
+  }
+}

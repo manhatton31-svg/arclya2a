@@ -1,0 +1,43 @@
+{
+  "name": "updateDashboardChart",
+  "description": "Patch a single chart in an existing dashboard by chart ID. Provide only the chart fields to change. Set a field to null to remove it. Use overwrite=true to skip version conflict checks, or provide the current dashboard version for optimistic concurrency control.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "dashboardUid": {
+        "type": "string",
+        "description": "The dashboard UID (stable external identifier). You can find UIDs using the `listDashboards()` tool."
+      },
+      "chartId": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The chart ID inside the dashboard charts array."
+      },
+      "chartPatchJson": {
+        "type": "string",
+        "minLength": 1,
+        "description": "A JSON merge-patch object for a single dashboard chart. Include only fields to change; set a field to null to remove it. If id is present, it must match chartId."
+      },
+      "overwrite": {
+        "type": "boolean",
+        "default": true,
+        "description": "When true (default), bypasses version checks and applies last-write-wins. When false, the version parameter is required."
+      },
+      "version": {
+        "type": "number",
+        "description": "The current dashboard version number. Required when overwrite is false. Get this from exportDashboard()."
+      },
+      "message": {
+        "type": "string",
+        "description": "Optional audit/change note for this operation."
+      }
+    },
+    "required": [
+      "dashboardUid",
+      "chartId",
+      "chartPatchJson"
+    ],
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+}

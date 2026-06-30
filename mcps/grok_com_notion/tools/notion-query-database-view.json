@@ -1,0 +1,34 @@
+{
+  "name": "notion-query-database-view",
+  "description": "Query data from a Notion database view.\n\nExecutes a database view's existing filters, sorts, and column selections to return matching pages. Use this to query a view exactly as configured. For custom SQL queries, aggregation, or querying across multiple data sources, use query_data_sources instead. By default, it returns non-archived rows only. Set \"is_archived\": true to query archived rows only.\n\nPrerequisites:\n1. Use the \"fetch\" tool first to get the database and its view URLs\n2. View URLs are found in database responses, typically in the format: https://www.notion.so/workspace/db-id?v=view-id\n\n\nExample: { \"view_url\": \"https://www.notion.so/workspace/Tasks-DB-abc123?v=def456\", \"is_archived\": false }\n\nWhen the response has \"has_more\": true, pass its \"next_cursor\" as \"start_cursor\" in a follow-up request with the same \"is_archived\" value.\n\nCommon use cases:\n- Query databases using pre-defined views (filters/sorts already configured), e.g. look for all tickets marked \"In Progress\" in a Tasks DB\n- Export filtered data for analysis\n- Generate reports from database content",
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "view_url": {
+        "type": "string",
+        "description": "URL of a specific database view to query. Example: https://www.notion.so/workspace/db-id?v=view-id"
+      },
+      "start_cursor": {
+        "description": "Cursor for pagination. Use the next_cursor value from the previous response to get the next page.",
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "page_size": {
+        "description": "Number of rows to return per page (default: 100, max: 100).",
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100
+      },
+      "is_archived": {
+        "description": "Optional archive selector. Omitted or false queries non-archived rows only; true queries archived rows only.",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "view_url"
+    ],
+    "additionalProperties": {}
+  }
+}

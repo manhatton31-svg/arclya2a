@@ -1,0 +1,35 @@
+{
+  "name": "queryMetrics",
+  "description": "# Instructions\n1. Query OpenTelemetry metrics stored in Axiom using MPL (Metrics Processing Language). NOT APL.\n2. The query targets a metrics dataset (kind \"otel-metrics-v1\").\n3. Use listMetrics() to discover available metric names and inspect metric type, temporality, and unit before querying whenever query semantics matter.\n4. Use listMetricTags() and getMetricTagValues() to discover filtering dimensions.\n5. ALWAYS restrict the time range to the smallest possible range that meets your needs.\n6. NEVER guess metric names or tag values. Always discover them first.\n\n# MPL Query Syntax\nA query has three parts: source, filtering, and transformation. Filters must appear before transformations.\n\n## Source\n```\n<dataset>:<metric>\n```\nBacktick-escape identifiers containing special characters: ``my-dataset``:``http.server.duration``\n\n## Filtering (where)\nChain filters with `|`. Use `where` (not `filter`, which is deprecated).\n```\n| where <tag> <op> <value>\n```\nOperators: ==, !=, >, <, >=, <=\nValues: \"string\", 42, 42.0, true, /regexp/\nCombine with: and, or, not, parentheses\n\n## Transformations\n\n### Aggregation (align) — aggregate data over time windows\n```\n| align to <interval> using <function>\n```\nFunctions: avg, sum, min, max, count, last\nIntervals: 5m, 1h, 1d, etc.\n\n### Grouping (group) — group series by tags\n```\n| group by <tag1>, <tag2> using <function>\n```\nFunctions: avg, sum, min, max, count\nWithout `by`: combines all series: `| group using sum`\n\n### Mapping (map) — transform values in place\n```\n| map rate                    // per-second rate of change\n| map increase                // increase between datapoints\n| map + 5                     // arithmetic: +, -, *, /\n| map abs                     // absolute value\n| map fill::prev              // fill gaps with previous value\n| map fill::const(0)          // fill gaps with constant\n| map filter::lt(0.4)         // remove datapoints >= 0.4\n| map filter::gt(100)         // remove datapoints <= 100\n| map is::gte(0.5)            // set to 1.0 if >= 0.5, else 0.0\n```\n\n### Computation (compute) — combine two metrics\n```\n(\n  `dataset`:`errors_total` | group using sum,\n  `dataset`:`requests_total` | group using sum;\n)\n| compute error_rate using /\n```\nFunctions: +, -, *, /, min, max, avg\n\n### Bucketing (bucket) — for histograms\n```\n| bucket by method, path to 5m using histogram(count, 0.5, 0.9, 0.99)\n| bucket by method to 5m using interpolate_delta_histogram(0.90, 0.99)\n| bucket by method to 5m using interpolate_cumulative_histogram(rate, 0.90, 0.99)\n```\n\n### Prometheus compatibility\n```\n| align to 5m using prom::rate   // Prometheus-style rate\n```\n\n## Identifiers\nUse backticks for names with special characters: ``my-dataset``, ``service.name``, ``http.request.duration``\n\n# Query Planning With Metric Definitions\nInspect the `type` and `temporality` fields returned by listMetrics() before choosing query strategy. Treat the following as guidance rather than strict rules, and prioritize the user's intent when appropriate.\n\n- If `type` is `CounterMonotonic` and `temporality` is `cumulative`, treat it as a cumulative counter. `rate`, `prom::rate`, or `increase` are often more appropriate than raw values for questions about changes over time.\n\n- If `type` is `CounterMonotonic` and `temporality` is `delta`, treat samples as per-collection-interval increments, not instantaneous gauge values.\n\n- If `type` is `Histogram`, use bucket functions for count, average, sum, and percentile queries. Choose `interpolate_delta_histogram(...)` for delta temporality and `interpolate_cumulative_histogram(...)` for cumulative temporality.\n\n- If `type` is `Summary`, do not treat it like histogram buckets.\n\n- If `type` or `temporality` is missing or ambiguous, generate the most conservative query and explicitly note any assumptions.\n\n# Examples\nBasic query:\n  `my-metrics`:`http.server.duration` | align to 5m using avg\n\nFiltered:\n  `my-metrics`:`http.server.duration` | where `service.name` == \"frontend\" | align to 5m using avg\n\nGrouped:\n  `my-metrics`:`http.server.duration` | align to 5m using avg | group by endpoint using sum\n\nRate:\n  `my-metrics`:`http.requests.total` | align to 5m using prom::rate | group by method, path, code using sum\n\nError rate (compute):\n  (\n    `my-metrics`:`http.requests.total` | where code >= 400 | group by method, path using sum,\n    `my-metrics`:`http.requests.total` | group by method, path using sum;\n  )\n  | compute error_rate using /\n  | align to 5m using avg\n\nSLI (error budget):\n  (\n    `my-metrics`:`http.requests.total` | where code >= 500 | align to 1h using prom::rate | group using sum,\n    `my-metrics`:`http.requests.total` | align to 1h using prom::rate | group using sum;\n  )\n  | compute error_rate using /\n  | map is::lt(0.2)\n  | align to 7d using avg\n\nHistogram percentiles:\n  `my-metrics`:`http.request.duration.seconds.bucket` | bucket by method, path to 5m using interpolate_delta_histogram(0.90, 0.99)\n\nFill gaps:\n  `my-metrics`:`cpu.usage` | map fill::prev | align to 1m using avg\n",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "mpl": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The metrics query string. Format: <dataset>:<metric> | <operations>"
+      },
+      "datasetName": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The dataset name. You can find an list of datasets using the `listDatasets()` tool."
+      },
+      "startTime": {
+        "type": "string",
+        "default": "now-30m",
+        "description": "Start time for the query range. A fixed (RFC3339) or relative (now, now-5m) time value. Defaults to \"now-30m\"."
+      },
+      "endTime": {
+        "type": "string",
+        "default": "now",
+        "description": "End time for the query range. A fixed (RFC3339) or relative (now, now-5m) time value. Defaults to \"now\"."
+      }
+    },
+    "required": [
+      "mpl",
+      "datasetName"
+    ],
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+}

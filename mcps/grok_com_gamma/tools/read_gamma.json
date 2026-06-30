@@ -1,0 +1,18 @@
+{
+  "name": "read_gamma",
+  "description": "Reads the content of an existing Gamma presentation or document. Use this when the user wants to read, reference, or learn about the content of an existing Gamma. Requires the Gamma file ID or URL. CRITICAL: Present the full human-readable content of every card to the user — including all text, images, videos, embeds, charts, tables, diagrams, and other visuals. Do NOT show raw HTML or JSON. Only summarize if the user explicitly asks for a summary.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "gammaIdOrUrl": {
+        "type": "string",
+        "description": "The Gamma file ID or a full Gamma URL. Examples: \"g5aykcic8ujm71s\" or \"https://gamma.app/docs/My-Deck-g5aykcic8ujm71s\"."
+      }
+    },
+    "required": [
+      "gammaIdOrUrl"
+    ],
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+}

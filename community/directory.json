@@ -1,0 +1,8 @@
+{
+  "agents": [
+    { "id": "outreach_worker", "rating": 4.5, "deployments": 0 },
+    { "id": "profit_guardrail", "rating": 5.0, "deployments": 0 },
+    { "id": "final_arbiter", "rating": 4.8, "deployments": 0 }
+  ],
+  "forum_posts": []
+}

@@ -1,0 +1,18 @@
+{
+  "name": "get_export_status",
+  "description": "Checks the status of an export previously started with export_gamma, using its exportId. Use this to retrieve the download URL when an export was still processing. Returns \"completed\" with a download URL, \"failed\" with an error, or \"pending\" if it is still rendering. The download URL expires after about one week and is not tied to the API key, so share it carefully and download promptly.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "exportId": {
+        "type": "string",
+        "description": "The export ID to check status for (returned by export_gamma)."
+      }
+    },
+    "required": [
+      "exportId"
+    ],
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+}

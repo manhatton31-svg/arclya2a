@@ -1,0 +1,33 @@
+{
+  "platform_name": "Arclya A2A",
+  "version": "0.1.0",
+  "xai": {
+    "base_url": "https://api.x.ai/v1",
+    "default_model": "grok-3-mini",
+    "model_tiers": {
+      "economy": "grok-3-mini",
+      "standard": "grok-3",
+      "premium": "grok-3-fast"
+    },
+    "prompt_cache_enabled": true
+  },
+  "margins": {
+    "minimum_margin_percent": 15,
+    "target_margin_percent": 35,
+    "veto_threshold_percent": 10
+  },
+  "handoff": {
+    "min_confidence": 60,
+    "require_memory_summary": true,
+    "require_ssot_sync": true
+  },
+  "audit": {
+    "enabled": true,
+    "directory": "data/audit"
+  },
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8787,
+    "base_url": "http://127.0.0.1:8787"
+  }
+}

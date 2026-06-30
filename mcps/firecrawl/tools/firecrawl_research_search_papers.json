@@ -1,0 +1,45 @@
+{
+  "name": "firecrawl_research_search_papers",
+  "description": "Primary entry point for finding arXiv papers by topic. Semantic (HyDE) search over arXiv abstracts; returns ranked papers with arXiv id, title, and abstract. The query should be a natural-language description of what you want. Run SEVERAL distinct framings of the question (sibling domains, rival methods, dataset/benchmark names) rather than one query — recall improves markedly with diverse framings. Returns up to `k` results (default 40).",
+  "inputSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "minLength": 1
+      },
+      "k": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 500
+      },
+      "authors": {
+        "description": "Author substring filter(s); ALL must match (case-insensitive).",
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "categories": {
+        "description": "arXiv category filter(s) (e.g. `cs.LG`); ALL must match.",
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "from": {
+        "description": "Inclusive lower bound on created/updated date (`YYYY-MM-DD`).",
+        "type": "string"
+      },
+      "to": {
+        "description": "Inclusive upper bound on created/updated date (`YYYY-MM-DD`).",
+        "type": "string"
+      }
+    },
+    "required": [
+      "query"
+    ],
+    "additionalProperties": false
+  }
+}

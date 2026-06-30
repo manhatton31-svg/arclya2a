@@ -1,0 +1,20 @@
+{
+  "version": "1.0.0",
+  "currency": "USD",
+  "margin_targets": {
+    "minimum_percent": 15,
+    "target_percent": 35,
+    "veto_threshold_percent": 10
+  },
+  "model_costs_per_1k_tokens": {
+    "grok-3-mini": { "input": 0.0003, "output": 0.0005, "cached_input": 0.000075 },
+    "grok-3": { "input": 0.003, "output": 0.015, "cached_input": 0.00075 },
+    "grok-3-fast": { "input": 0.005, "output": 0.025, "cached_input": 0.00125 }
+  },
+  "service_tiers": {
+    "outreach_sequence": { "base_price_usd": 49.0, "min_margin_percent": 20 },
+    "ai_closer_session": { "base_price_usd": 99.0, "min_margin_percent": 25 },
+    "campaign_optimization": { "base_price_usd": 29.0, "min_margin_percent": 15 }
+  },
+  "agent_overrides": {}
+}

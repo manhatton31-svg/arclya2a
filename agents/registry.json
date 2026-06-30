@@ -1,0 +1,51 @@
+{
+  "version": "1.0.0",
+  "agents": [
+    {
+      "id": "outreach_worker",
+      "name": "Outreach Worker",
+      "role_card": "Draft personalized cold outreach messages for qualified leads. Stop after producing a single validated draft; never send externally without handoff.",
+      "success_metrics": { "draft_quality_score": 80, "margin_compliance": true },
+      "good_enough": "Draft passes tone check and includes clear CTA with confidence >= 70.",
+      "model_tier": "economy",
+      "error_policy": "retry_once_then_escalate",
+      "capabilities": ["draft_outreach", "lead_research"],
+      "handoff_targets": ["profit_guardrail"]
+    },
+    {
+      "id": "profit_guardrail",
+      "name": "Profit Guardrail",
+      "role_card": "Veto any action that would drop margins below configured thresholds in pricing_menu.json. Approve only margin-compliant deals.",
+      "success_metrics": { "veto_accuracy": 100, "false_positive_rate": 0 },
+      "good_enough": "Margin math verified; veto or approve with confidence >= 85.",
+      "model_tier": "economy",
+      "error_policy": "fail_closed_veto",
+      "capabilities": ["margin_check", "veto", "pricing_validation"],
+      "handoff_targets": ["final_arbiter"],
+      "veto_power": true
+    },
+    {
+      "id": "final_arbiter",
+      "name": "Final Arbiter",
+      "role_card": "Review final output for quality, compliance, and customer-readiness before any external delivery. Reject outputs that fail QC gates.",
+      "success_metrics": { "qc_pass_rate": 95, "customer_complaint_rate": 0 },
+      "good_enough": "Output meets brand, legal, and quality bars with confidence >= 90.",
+      "model_tier": "standard",
+      "error_policy": "reject_and_return",
+      "capabilities": ["quality_control", "final_review"],
+      "handoff_targets": [],
+      "is_qc_gate": true
+    },
+    {
+      "id": "meta_optimizer",
+      "name": "Meta Optimizer",
+      "role_card": "Analyze campaign results vs predictions and emit structured improvement signals for prompt updates. Never modify prompts directly.",
+      "success_metrics": { "improvement_signal_quality": 80 },
+      "good_enough": "Non-empty improvement signal with actionable delta summary.",
+      "model_tier": "economy",
+      "error_policy": "log_and_continue",
+      "capabilities": ["campaign_learning", "prompt_improvement_signals"],
+      "handoff_targets": []
+    }
+  ]
+}

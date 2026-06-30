@@ -1,0 +1,29 @@
+{
+  "name": "listMetricTags",
+  "description": "List all available tags (dimensions) in a metrics dataset (kind `otel-metrics-v1`). Tags can be used to filter and group metrics queries.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "datasetName": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The dataset name. You can find an list of datasets using the `listDatasets()` tool."
+      },
+      "startTime": {
+        "type": "string",
+        "default": "now-30m",
+        "description": "Start time for the query range. A fixed (RFC3339) or relative (now, now-5m) time value. Defaults to \"now-30m\"."
+      },
+      "endTime": {
+        "type": "string",
+        "default": "now",
+        "description": "End time for the query range. A fixed (RFC3339) or relative (now, now-5m) time value. Defaults to \"now\"."
+      }
+    },
+    "required": [
+      "datasetName"
+    ],
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+}

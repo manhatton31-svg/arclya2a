@@ -1,0 +1,28 @@
+{
+  "name": "export_gamma",
+  "description": "Starts exporting an existing Gamma presentation or document to a downloadable file. Use this when the user wants a PDF, PowerPoint (pptx), or PNG image export of a Gamma they already have. Requires the Gamma file ID or URL and the format: \"pdf\", \"pptx\", or \"png\" (png returns a ZIP archive with one PNG per card). The export runs in the background: this returns an exportId immediately, then call get_export_status with that exportId to get the download link once it is ready. Do NOT call export_gamma again to check progress (that starts a brand-new export). The download link expires after about one week and is not tied to the API key, so share it carefully and download promptly.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "gammaIdOrUrl": {
+        "type": "string",
+        "description": "The Gamma file ID or a full Gamma URL to export. Examples: \"g5aykcic8ujm71s\" or \"https://gamma.app/docs/My-Deck-g5aykcic8ujm71s\"."
+      },
+      "exportAs": {
+        "type": "string",
+        "enum": [
+          "pdf",
+          "pptx",
+          "png"
+        ],
+        "description": "Output format: \"pdf\" → a .pdf, \"pptx\" → a .pptx, \"png\" → a .zip archive containing one PNG per card (not a single image)."
+      }
+    },
+    "required": [
+      "gammaIdOrUrl",
+      "exportAs"
+    ],
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+}

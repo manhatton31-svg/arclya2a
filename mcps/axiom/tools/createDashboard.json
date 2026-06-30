@@ -1,0 +1,27 @@
+{
+  "name": "createDashboard",
+  "description": "Create a new dashboard from a JSON document. The dashboard JSON must include required fields: name, owner, charts, layout, refreshTime, schemaVersion (2), timeWindowStart, timeWindowEnd. Set owner to X-AXIOM-EVERYONE to make it visible to all org members.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "dashboardJson": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The full dashboard document as a JSON string. Must include required fields: name, owner, charts (array), layout (array), refreshTime (15, 60, or 300), schemaVersion (2), timeWindowStart, timeWindowEnd."
+      },
+      "uid": {
+        "type": "string",
+        "description": "Optional custom UID for the dashboard. If omitted, the server generates one."
+      },
+      "message": {
+        "type": "string",
+        "description": "Optional audit/change note for this operation."
+      }
+    },
+    "required": [
+      "dashboardJson"
+    ],
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+}

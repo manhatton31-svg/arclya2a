@@ -1,0 +1,19 @@
+{
+  "name": "deleteNotifier",
+  "description": "Delete a notifier by its ID. This action is irreversible.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "notifierId": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The notifier ID. You can find notifier IDs using the `listNotifiers()` tool."
+      }
+    },
+    "required": [
+      "notifierId"
+    ],
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "name": "updateDashboard",
+  "description": "Update an existing dashboard by UID. Provide the full dashboard JSON document. Use overwrite=true to skip version conflict checks, or provide the current version number for optimistic concurrency control.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "dashboardUid": {
+        "type": "string",
+        "description": "The dashboard UID (stable external identifier). You can find UIDs using the `listDashboards()` tool."
+      },
+      "dashboardJson": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The full dashboard document as a JSON string. Must include required fields: name, owner, charts (array), layout (array), refreshTime (15, 60, or 300), schemaVersion (2), timeWindowStart, timeWindowEnd."
+      },
+      "overwrite": {
+        "type": "boolean",
+        "default": true,
+        "description": "When true (default), bypasses version checks and applies last-write-wins. When false, the version parameter is required."
+      },
+      "version": {
+        "type": "number",
+        "description": "The current dashboard version number. Required when overwrite is false. Get this from exportDashboard()."
+      },
+      "message": {
+        "type": "string",
+        "description": "Optional audit/change note for this operation."
+      }
+    },
+    "required": [
+      "dashboardUid",
+      "dashboardJson"
+    ],
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+}

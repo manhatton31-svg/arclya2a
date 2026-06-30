@@ -1,0 +1,19 @@
+{
+  "name": "getDatasetFields",
+  "description": "List all fields in an events or traces dataset (kind `events`, `otel.traces`, etc.). For metrics datasets (kind `otel-metrics-v1`), use `listMetrics()` and `listMetricTags()` instead — field schemas are not meaningful for that dataset type.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "datasetName": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The dataset name. You can find an list of datasets using the `listDatasets()` tool."
+      }
+    },
+    "required": [
+      "datasetName"
+    ],
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+}

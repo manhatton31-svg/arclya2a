@@ -1,0 +1,156 @@
+{
+  "name": "generate_from_template",
+  "description": "Use this when the user wants to create a NEW gamma by adapting, remixing, or transforming an existing template gamma. The source template gamma’s structure (card count, sections, layout) is preserved by default, but the prompt can direct changes — e.g. adding/removing/reordering cards, adapting for a different audience, transforming the subject matter, replacing images, populating cards from supplied data, or substituting variables and placeholders. Unlike the generate tool (which determines structure from scratch), this tool starts from an existing template gamma and uses it as the source material for the new one. Choose this tool whenever the user references an existing template gamma as the starting point — whether they want to populate it with new content, adapt it for a different audience or topic, generate a variation, or maintain consistent styling across multiple generated gammas. Requires a gammaId identifying the source template gamma in the user’s workspace. Important: the input gammaId MUST point to a template gamma; a regular non-template gamma won't be accepted. Prefer IDs returned by get_gammas with type=\"template\". If the user provided a template ID, you may use it as-is. Do not pass URLs, placeholder IDs, or regular/non-template gamma IDs. If this tool reports that the gamma is not accessible or is not a template, recover by calling get_gammas with type=\"template\" to find a valid template, or use generate if the user actually wanted to create from non-template source material. This tool can only create new gammas — it cannot edit, modify, or refine an existing gamma (including one it previously generated). After generation, direct the user to open their gamma via the gammaUrl to make any edits. Do not offer to adjust, tweak, or refine the generated content yourself. Only include optional parameters when the user explicitly requests or clearly implies them. Gamma has intelligent defaults. When in doubt, omit. When uncertain about user preferences, ask rather than assume. Always share the output gammaUrl with the user when it's available.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "gammaId": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The ID of a template gamma in the user's workspace. This must be the `id` field from a get_gammas result whose type is \"template\", or a user-provided template ID. Do not invent or guess this value. Do not pass URLs, placeholder IDs, or IDs for regular/non-template gammas. If you need to discover a valid template ID, call get_gammas with type=\"template\" and pass the returned `id` field through unchanged."
+      },
+      "prompt": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 400000,
+        "description": "Text describing how to adapt, remix, or transform the source template gamma. May contain new content to apply (text, documents, data, messaging, embedded image URLs pasted inline where the image should appear), adaptation directives (e.g. “make this for a healthcare audience,” “remove the team section,” “reorder so Our Solution comes before The Problem,” “replace [[client-name]] with Acme Corp”), or a mix of both. When the user has supplied new content or source data (a document, data table, new messaging, image URLs), include it verbatim — do not summarize. When the intent is an adaptation directive, keep the prompt concise. Budget note: the prompt and the source template gamma's content share a token budget, so the effective prompt budget is smaller on large sources; prefer concise prompts where possible."
+      },
+      "title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500,
+        "description": "Custom title for the generated Gamma (1–500 characters). Only include if the user explicitly provides or asks for a specific title; otherwise omit and a title will be derived from the content."
+      },
+      "themeId": {
+        "type": "string",
+        "description": "Theme ID to use for the generated gamma. Only include when the user explicitly requests a theme change, or describes a desired visual style (e.g., “stylish,” “professional,” “cute,” “colorful,” “modern”). When omitted, the template’s theme applies. Call get_themes to look up available theme IDs, and evaluate each theme’s tone and color keywords against both the user’s aesthetic preference and the intent of the prompt to find the best match."
+      },
+      "imageOptions": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "enum": [
+              "dall-e-3",
+              "imagen-3-flash",
+              "imagen-4-pro",
+              "imagen-4-ultra",
+              "ideogram-v3",
+              "ideogram-v3-turbo",
+              "ideogram-v3-quality",
+              "flux-kontext-pro",
+              "flux-kontext-fast",
+              "leonardo-phoenix",
+              "recraft-v3",
+              "recraft-v3-svg",
+              "recraft-v4",
+              "recraft-v4-svg",
+              "recraft-v4-pro",
+              "luma-photon-1",
+              "luma-photon-flash-1",
+              "gpt-image-1-medium",
+              "gpt-image-1-high",
+              "gemini-2.5-flash-image",
+              "gemini-3-pro-image",
+              "gemini-3-pro-image-hd",
+              "gemini-3.1-flash-image-mini",
+              "gemini-3.1-flash-image",
+              "gemini-3.1-flash-image-hd",
+              "flux-2-pro",
+              "flux-2-flex",
+              "flux-2-max",
+              "flux-2-klein"
+            ],
+            "description": "Only include if the user explicitly requests a specific image model."
+          },
+          "style": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Custom art style prompt for AI images (e.g., \"watercolor with soft pastels\", \"retro pixel art\"). Max 500 characters."
+          }
+        },
+        "additionalProperties": false,
+        "description": "Advanced: Overrides for AI image generation. Only applies when the template uses AI-generated images — if the template uses another image source (Pictographic, web, Pexels, etc.), these options are ignored and the response returns a warning. Only include if the user explicitly requests specific image settings."
+      },
+      "sharingOptions": {
+        "type": "object",
+        "properties": {
+          "workspaceAccess": {
+            "type": "string",
+            "enum": [
+              "edit",
+              "comment",
+              "view",
+              "noAccess",
+              "fullAccess"
+            ],
+            "description": "Access level for workspace members"
+          },
+          "externalAccess": {
+            "type": "string",
+            "enum": [
+              "edit",
+              "comment",
+              "view",
+              "noAccess"
+            ],
+            "description": "Access level for external users"
+          },
+          "emailOptions": {
+            "type": "object",
+            "properties": {
+              "recipients": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Email addresses to share with"
+              },
+              "access": {
+                "type": "string",
+                "enum": [
+                  "edit",
+                  "comment",
+                  "view",
+                  "fullAccess"
+                ],
+                "description": "Access level for email recipients"
+              }
+            },
+            "required": [
+              "recipients",
+              "access"
+            ],
+            "additionalProperties": false,
+            "description": "Share via email to specific recipients"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Advanced: Sharing and permissions configuration. Only use if user explicitly requests specific sharing settings."
+      },
+      "folderIds": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 10,
+        "description": "Array of folder IDs to organize the generated content (only include if requested by the user, get IDs from get_folders tool). Max 10."
+      },
+      "exportAs": {
+        "type": "string",
+        "enum": [
+          "pptx",
+          "pdf",
+          "png"
+        ],
+        "description": "Export format: 'pptx' (PowerPoint), 'pdf', or 'png'. Only include when the user explicitly requests an export. Note: 'png' returns a ZIP archive containing one PNG per card (not a single PNG file) — the exportUrl will point at a .zip. The returned exportUrl expires after approximately one week and is not tied to your API key — prompt the user to download promptly and treat it as a secret."
+      }
+    },
+    "required": [
+      "gammaId",
+      "prompt"
+    ],
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+}

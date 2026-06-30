@@ -1,0 +1,35 @@
+{
+  "name": "searchMetrics",
+  "description": "Start here when the user mentions a specific service, host, or entity name and you need to work with metrics data.\n\nSearches tag values across all metrics in a dataset and returns the metric names that are associated with the given entity. This is the fastest way to go from a known entity name (e.g. \"checkout-service\", \"api-gateway\", \"us-east-1\") to a concrete list of metric names you can actually query.\n\nReturns a map of metric name → matched tags plus metric metadata, including `type`, `temporality`, and `unit`.\n\n**Time range:** Use a window of at least 3 hours. Recently-ingested data can take up to 2 hours to become searchable here, so narrow windows may return empty results even when data exists. For recent data, default to `now-3h` / `now`. For historical data, use whatever window covers the period you care about — e.g. `now-14d` / `now-7d` is valid.\n\n**Workflow:**\n1. Call this tool with the entity name to get relevant metric names.\n2. Use listMetricTags() / getMetricTagValues() to discover filter dimensions for those metrics.\n3. Call queryMetrics() with an MPL query targeting the specific metric and filters.\n\nUse listMetrics() instead when you have no entity name to search by and need a full catalogue of what's in the dataset.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "datasetName": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The dataset name. You can find an list of datasets using the `listDatasets()` tool."
+      },
+      "value": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The entity name to search for across all tag values (e.g. a service name \"checkout-service\", a host \"prod-worker-1\", a region \"us-east-1\"). The search matches this exact string against tag values — use the canonical name as it appears in your infrastructure."
+      },
+      "startTime": {
+        "type": "string",
+        "default": "now-30m",
+        "description": "Start time for the query range. A fixed (RFC3339) or relative (now, now-5m) time value. Defaults to \"now-30m\"."
+      },
+      "endTime": {
+        "type": "string",
+        "default": "now",
+        "description": "End time for the query range. A fixed (RFC3339) or relative (now, now-5m) time value. Defaults to \"now\"."
+      }
+    },
+    "required": [
+      "datasetName",
+      "value"
+    ],
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+}

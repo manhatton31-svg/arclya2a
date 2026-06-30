@@ -1,0 +1,19 @@
+{
+  "name": "createNotifier",
+  "description": "Create a new Axiom notifier using a JSON payload. The payload must include name and properties; configure one notification channel such as email, slack, webhook, customWebhook, pagerduty, opsgenie, discord, discordWebhook, or microsoftTeams. For custom webhooks, use properties.customWebhook with required url and body, plus optional headers and secretHeaders; body supports Go-template variables such as .Action, .MonitorID, .Body, .Title, and .Value.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "notifierJson": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The full notifier configuration as a JSON string. Must include name and properties. Configure one channel inside properties, such as email, slack, webhook, customWebhook, pagerduty, opsgenie, discord, discordWebhook, or microsoftTeams. For customWebhook, include required url and body, plus optional headers and secretHeaders; body supports Go-template variables such as .Action, .MonitorID, .Body, .Title, and .Value."
+      }
+    },
+    "required": [
+      "notifierJson"
+    ],
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "getDashboard",
+  "description": "Get detailed information about a specific dashboard by UID.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "dashboardId": {
+        "type": "string",
+        "description": "The dashboard UID. You can find a list of dashboards using the `listDashboards()` tool."
+      }
+    },
+    "required": [
+      "dashboardId"
+    ],
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+}

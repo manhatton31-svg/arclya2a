@@ -1,0 +1,400 @@
+{
+  "name": "generate",
+  "description": "Use this when the user wants to create a NEW presentation, document, webpage, or social media post. Use generate for any creation request unless the user references a template they want to create from. This tool can only create new content — it cannot edit, modify, or refine an existing Gamma. After generation, direct the user to open their Gamma via the gammaUrl to make any edits, theme changes, or refinements in the Gamma editor. Do not offer to adjust, tweak, or refine the generated content yourself. Only include optional parameters when the user explicitly requests or clearly implies them. Gamma has intelligent defaults. When in doubt, omit. When uncertain about user preferences, ask rather than assume. Always share the output gammaUrl with the user when it's available.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "inputText": {
+        "type": "string",
+        "description": "The content to generate from (text prompt, outline, or full content). IMPORTANT: You MUST include the complete text of any relevant context from the conversation, including outlines you created with the user, and text extracted from attachments—do not summarize or omit any part of it."
+      },
+      "title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500,
+        "description": "Custom title for the generated Gamma (1–500 characters). Only include if the user explicitly provides or asks for a specific title; otherwise omit and a title will be derived from the content."
+      },
+      "textMode": {
+        "type": "string",
+        "enum": [
+          "generate",
+          "condense",
+          "preserve"
+        ],
+        "description": "Text Mode: this optional parameter specifies how Gamma should process your inputText before it is added to the slides: 'generate' expands brief inputText prompts into full slides (use with short outlines). This is the default value that works most of the time. 'condense' summarizes long detailed inputText content into slides (use if inputText contains a really long article or document, and user wants to create a short presentation or does not specify the number of slides). 'preserve' uses inputText as-is (use only if inputText has fully fleshed out, very detailed pre-written slide content, or a document that you want to preserve without any changes)."
+      },
+      "format": {
+        "type": "string",
+        "enum": [
+          "presentation",
+          "document",
+          "social",
+          "webpage"
+        ],
+        "description": "Format: this optional parameter tells Gamma what type of content to create: 'presentation' (slides), 'document' (long-form text — use for one-pagers, handouts, flyers, briefs, spec sheets, and leave-behinds), 'social' (social media post), 'webpage' (a website or landing page meant to be published online). The default value is presentation which works most of the time, so it is not necessary to specify this unless user requests different format."
+      },
+      "numCards": {
+        "type": "number",
+        "description": "Number of cards: this optional parameter sets the number of slides, cards, or pages that Gamma will generate in the presentation. Gamma does have a sensible default value for this, so it is not necessary to specify this unless user requests a specific number of slides."
+      },
+      "cardSplit": {
+        "type": "string",
+        "enum": [
+          "inputTextBreaks",
+          "auto"
+        ],
+        "description": "How to split inputText across cards. 'inputTextBreaks' uses explicit breaks in the inputText (e.g., '---' separators) to decide where one card ends and the next begins — use when the user has pre-structured their input into slides. 'auto' lets Gamma freely decide card boundaries based on content — this is the default behavior. Only specify when the user explicitly wants their inputText breaks honored as card boundaries."
+      },
+      "themeId": {
+        "type": "string",
+        "description": "Theme ID to use (optional). Call get_themes tool to get a list of available themes, when user describes desired visual styling (e.g., 'stylish', 'professional', 'cute', 'colorful', 'modern') or explicitly requests theme customization. Otherwise, omit this parameter for default theme. When selecting a theme from get_themes results, evaluate each theme's tone and color keywords against both the user's aesthetic preference and the presentation topic to find the best match."
+      },
+      "folderIds": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Array of folder IDs to organize the generated content (only include if requested by the user, get IDs from get_folders tool)"
+      },
+      "additionalInstructions": {
+        "type": "string",
+        "description": "Only included when you need to give guidance for the AI generator that isn't included in other parameters, ie \"use a pyramid layout on slide 2\""
+      },
+      "exportAs": {
+        "type": "string",
+        "enum": [
+          "pptx",
+          "pdf",
+          "png"
+        ],
+        "description": "Export format: 'pptx' (PowerPoint), 'pdf', or 'png'. Only include when the user explicitly requests an export. Note: 'png' returns a ZIP archive containing one PNG per card (not a single PNG file) — the exportUrl will point at a .zip. The returned exportUrl expires after approximately one week and is not tied to your API key — prompt the user to download promptly and treat it as a secret."
+      },
+      "textOptions": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "string",
+            "enum": [
+              "brief",
+              "medium",
+              "detailed",
+              "extensive"
+            ],
+            "description": "This optional parameter sets the amount of text per slide or section of a slide. This parameter does not need to be specified unless user explicitly requests a specific amount of text or the type of the presentation would require it."
+          },
+          "tone": {
+            "type": "string",
+            "description": "This optional parameter sets the writing tone (e.g., 'professional', 'casual')."
+          },
+          "audience": {
+            "type": "string",
+            "description": "This optional parameter sets the target audience (e.g., 'executives', 'students')"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "en",
+              "en-gb",
+              "en-in",
+              "es",
+              "es-es",
+              "es-mx",
+              "es-419",
+              "ca",
+              "fr",
+              "zh-cn",
+              "zh-tw",
+              "ko",
+              "ja",
+              "ja-da",
+              "pt-br",
+              "pt-pt",
+              "de",
+              "it",
+              "ru",
+              "pl",
+              "uk",
+              "ro",
+              "hu",
+              "cs",
+              "el",
+              "tr",
+              "ar",
+              "ar-sa",
+              "he",
+              "fa",
+              "nl",
+              "sv",
+              "da",
+              "nb",
+              "fi",
+              "id",
+              "vi",
+              "hi",
+              "gu",
+              "mr",
+              "te",
+              "bn",
+              "ta",
+              "ur",
+              "kn",
+              "ml",
+              "th",
+              "sr",
+              "hr",
+              "sq",
+              "bg",
+              "sl",
+              "bs",
+              "mk",
+              "sw",
+              "ha",
+              "yo",
+              "tl",
+              "ms",
+              "kk",
+              "uz",
+              "af",
+              "lv",
+              "lt",
+              "et",
+              "is",
+              "cy"
+            ],
+            "description": "Language code"
+          }
+        },
+        "additionalProperties": false
+      },
+      "imageOptions": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "aiGenerated",
+              "webAllImages",
+              "webFreeToUse",
+              "webFreeToUseCommercially",
+              "pictographic",
+              "giphy",
+              "pexels",
+              "placeholder",
+              "noImages",
+              "themeAccent"
+            ],
+            "description": "Image source: this optional parameter chooses the source from where the images to the presentation come from. The default value is aiGenerated images, which is a versatile option that works most of the time. If user requests a specific source or the style of the presentation requires a specific source, here are the available options: 'aiGenerated (AI generated images of any topic and style)', 'webAllImages' (all web images), 'webFreeToUse' (freely-licensed), 'webFreeToUseCommercially' (commercial use), 'pictographic' (drawings), 'giphy' (GIFs), 'pexels' (Pexels photos), 'placeholder', 'noImages', 'themeAccent' (uses the selected theme's accent images instead of generating or sourcing new ones — best when the user wants the deck to stay on-brand with the theme)."
+          },
+          "model": {
+            "type": "string",
+            "enum": [
+              "dall-e-3",
+              "imagen-3-flash",
+              "imagen-4-pro",
+              "imagen-4-ultra",
+              "ideogram-v3",
+              "ideogram-v3-turbo",
+              "ideogram-v3-quality",
+              "flux-kontext-pro",
+              "flux-kontext-fast",
+              "leonardo-phoenix",
+              "recraft-v3",
+              "recraft-v3-svg",
+              "recraft-v4",
+              "recraft-v4-svg",
+              "recraft-v4-pro",
+              "luma-photon-1",
+              "luma-photon-flash-1",
+              "gpt-image-1-medium",
+              "gpt-image-1-high",
+              "gemini-2.5-flash-image",
+              "gemini-3-pro-image",
+              "gemini-3-pro-image-hd",
+              "gemini-3.1-flash-image-mini",
+              "gemini-3.1-flash-image",
+              "gemini-3.1-flash-image-hd",
+              "flux-2-pro",
+              "flux-2-flex",
+              "flux-2-max",
+              "flux-2-klein"
+            ],
+            "description": "AI image model is optional. Only include if user explicitly requests a specific image model. Supported models: dall-e-3, imagen-3-flash, imagen-4-pro, imagen-4-ultra, ideogram-v3, ideogram-v3-turbo, ideogram-v3-quality, flux-kontext-pro, flux-kontext-fast, leonardo-phoenix, recraft-v3, recraft-v3-svg, recraft-v4, recraft-v4-svg, recraft-v4-pro, luma-photon-1, luma-photon-flash-1, gpt-image-1-medium, gpt-image-1-high, gemini-2.5-flash-image, gemini-3-pro-image, gemini-3-pro-image-hd, gemini-3.1-flash-image-mini, gemini-3.1-flash-image, gemini-3.1-flash-image-hd, flux-2-pro, flux-2-flex, flux-2-max, flux-2-klein"
+          },
+          "stylePreset": {
+            "type": "string",
+            "enum": [
+              "photorealistic",
+              "illustration",
+              "abstract",
+              "3D",
+              "lineArt",
+              "custom"
+            ],
+            "description": "Art style preset for AI-generated images. Choose based on the content and user preference: 'photorealistic' (realistic, cinematic photos), 'illustration' (modern vector illustrations), 'abstract' (non-representational, flowing gradients and geometric forms), '3D' (3D rendered style), 'lineArt' (minimal line drawings). Use 'custom' only if the user describes a specific art style not covered by presets, and provide details in the 'style' field. If not specified, defaults to 'custom'. When the user mentions a visual style that matches a preset, prefer using the preset."
+          },
+          "style": {
+            "type": "string",
+            "description": "Custom art style prompt for AI images. Only used when stylePreset is 'custom' or omitted. Provide a detailed description of the desired art style (e.g., 'watercolor with soft pastels', 'retro pixel art'). Ignored when a named stylePreset is selected."
+          }
+        },
+        "additionalProperties": false
+      },
+      "cardOptions": {
+        "type": "object",
+        "properties": {
+          "dimensions": {
+            "type": "string",
+            "enum": [
+              "16x9",
+              "4x3",
+              "fluid",
+              "letter",
+              "a4",
+              "pageless",
+              "1x1",
+              "4x5",
+              "9x16"
+            ],
+            "description": "Card dimensions: this optional parameter sets the aspect ratio, size, or way of laying out each slide in the presentation. It is usually not necessary to set this unless user requests a specific setting or implies a specific type of layout."
+          },
+          "headerFooter": {
+            "type": "object",
+            "properties": {
+              "topLeft": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "cardNumber",
+                      "image",
+                      "text"
+                    ],
+                    "description": "Content type for this slot"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "themeLogo",
+                      "custom"
+                    ],
+                    "description": "Image source (required when type='image')"
+                  },
+                  "src": {
+                    "type": "string",
+                    "description": "Image URL (required when type='image' and source='custom')"
+                  },
+                  "value": {
+                    "type": "string",
+                    "description": "Text content (required when type='text')"
+                  },
+                  "size": {
+                    "type": "string",
+                    "enum": [
+                      "sm",
+                      "md",
+                      "lg",
+                      "xl"
+                    ],
+                    "description": "Image size"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "additionalProperties": false
+              },
+              "topCenter": {
+                "$ref": "#/properties/cardOptions/properties/headerFooter/properties/topLeft"
+              },
+              "topRight": {
+                "$ref": "#/properties/cardOptions/properties/headerFooter/properties/topLeft"
+              },
+              "bottomLeft": {
+                "$ref": "#/properties/cardOptions/properties/headerFooter/properties/topLeft"
+              },
+              "bottomCenter": {
+                "$ref": "#/properties/cardOptions/properties/headerFooter/properties/topLeft"
+              },
+              "bottomRight": {
+                "$ref": "#/properties/cardOptions/properties/headerFooter/properties/topLeft"
+              },
+              "hideFromFirstCard": {
+                "type": "boolean",
+                "description": "Hide header/footer from the first card"
+              },
+              "hideFromLastCard": {
+                "type": "boolean",
+                "description": "Hide header/footer from the last card"
+              }
+            },
+            "additionalProperties": false,
+            "description": "Advanced: Header and footer configuration. Only use if user explicitly requests headers/footers."
+          }
+        },
+        "additionalProperties": false
+      },
+      "sharingOptions": {
+        "type": "object",
+        "properties": {
+          "workspaceAccess": {
+            "type": "string",
+            "enum": [
+              "edit",
+              "comment",
+              "view",
+              "noAccess",
+              "fullAccess"
+            ],
+            "description": "Access level for workspace members"
+          },
+          "externalAccess": {
+            "type": "string",
+            "enum": [
+              "edit",
+              "comment",
+              "view",
+              "noAccess"
+            ],
+            "description": "Access level for external users"
+          },
+          "emailOptions": {
+            "type": "object",
+            "properties": {
+              "recipients": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Email addresses to share with"
+              },
+              "access": {
+                "type": "string",
+                "enum": [
+                  "edit",
+                  "comment",
+                  "view",
+                  "fullAccess"
+                ],
+                "description": "Access level for email recipients"
+              }
+            },
+            "required": [
+              "recipients",
+              "access"
+            ],
+            "additionalProperties": false,
+            "description": "Share via email to specific recipients"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Advanced: Sharing and permissions configuration. Only use if user explicitly requests specific sharing settings."
+      }
+    },
+    "required": [
+      "inputText"
+    ],
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+}

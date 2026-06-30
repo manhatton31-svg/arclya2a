@@ -1,0 +1,24 @@
+{
+  "name": "updateMonitor",
+  "description": "Update an existing Axiom monitor by ID using a full monitor JSON payload. Use checkMonitors() to find monitor IDs before updating.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "monitorId": {
+        "type": "string",
+        "description": "The monitor ID. You can find an list of monitors using the `checkMonitors()` tool."
+      },
+      "monitorJson": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The full monitor configuration as a JSON string. Must include name, type, intervalMinutes, rangeMinutes, and at least one of aplQuery or mplQuery."
+      }
+    },
+    "required": [
+      "monitorId",
+      "monitorJson"
+    ],
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+}

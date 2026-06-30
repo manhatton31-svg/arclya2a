@@ -1,0 +1,9 @@
+{
+  "name": "checkMonitors",
+  "description": "Check all monitors and their statuses.",
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {}
+  }
+}

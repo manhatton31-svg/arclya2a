@@ -1,0 +1,28 @@
+{
+  "name": "getMonitorHistory",
+  "description": "Get alert history for a monitor from the public /v2/monitors/{id}/history endpoint. Use the checkMonitors() tool to list all monitors.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "monitorId": {
+        "type": "string",
+        "description": "The monitor ID. You can find an list of monitors using the `checkMonitors()` tool."
+      },
+      "startTime": {
+        "type": "string",
+        "default": "now-30m",
+        "description": "Start time for the query range. A fixed (RFC3339) or relative (now, now-5m) time value. Defaults to \"now-30m\"."
+      },
+      "endTime": {
+        "type": "string",
+        "default": "now",
+        "description": "End time for the query range. A fixed (RFC3339) or relative (now, now-5m) time value. Defaults to \"now\"."
+      }
+    },
+    "required": [
+      "monitorId"
+    ],
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "name": "get_gammas",
+  "description": "Use this when the user wants to browse or search their existing gammas. Optionally filter by type (template, regular, or all) using the `type` parameter, and/or search by title using the `query` parameter. Every returned gamma has a type: \"template\" or \"regular\". Results are paginated; use `limit` to control page size and `after` to fetch the next page. Important: when continuing pagination, keep `query` and `type` unchanged from the previous call and only advance `after`. Changing `query` or `type` while reusing a cursor can produce skipped, duplicated, or otherwise inconsistent results.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "minLength": 3,
+        "description": "Search gammas by title (optional, minimum 3 characters; omit to return all gammas)"
+      },
+      "type": {
+        "type": "string",
+        "enum": [
+          "template",
+          "regular",
+          "all"
+        ],
+        "description": "Filter by gamma type: 'template', 'regular', or 'all' (optional, defaults to all)"
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 50,
+        "description": "Maximum number of gammas to return (optional, defaults to 25, max 50)"
+      },
+      "after": {
+        "type": "string",
+        "description": "Cursor from a previous response to fetch the next page (optional). When paginating, keep query and type exactly the same as the call that produced the cursor; changing filters mid-pagination can cause skipped, duplicated, or inconsistent results."
+      }
+    },
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "get_generation_status",
+  "description": "Check the status of a Gamma generation previously created with 'generate' or 'generate_from_template'. Only use this tool if the user explicitly asks for the status — the interactive widget rendered by the generate tools already polls for completion and updates automatically when done. Do not poll in a loop.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "generationId": {
+        "type": "string",
+        "description": "The generation ID to check status for"
+      }
+    },
+    "required": [
+      "generationId"
+    ],
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+}

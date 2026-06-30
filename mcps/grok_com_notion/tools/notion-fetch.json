@@ -1,0 +1,26 @@
+{
+  "name": "notion-fetch",
+  "description": "Retrieves details about a Notion entity (page, database, or data source) by URL or ID.\n\nProvide URL or ID in `id` parameter. Make multiple calls to fetch multiple entities.\n\nPages use enhanced Markdown format. For the complete specification, read the MCP resource `notion://docs/enhanced-markdown-spec` through your MCP client's resource-reading interface. Do not pass this URI to the Notion `fetch` tool or any URL-fetching tool.\n\nDatabases return all data sources (collections). Each data source has a unique ID shown in `<data-source url=\"collection://...\">` tags. You can pass a data source ID directly to this tool to fetch details about that specific data source, including its schema and properties. Use data source IDs with update_data_source and query_data_sources tools. Multi-source databases (e.g., with linked sources) will show multiple data sources.\n\nSet `include_discussions` to true to see discussion counts and inline discussion markers that correlate with the `get_comments` tool. The page output will include a `<page-discussions>` summary tag with discussion count, preview snippets, and `discussion://` URLs that match the discussion IDs returned by `get_comments`.\n\nPass the special id `\"self\"` to get the connected workspace and user identity instead of an entity. The result includes a `self` object with the workspace id + name and the authenticated user's id, name, and email. Use this to label the connection (e.g. by workspace name) or obtain a stable id for the connected workspace and user.\n\n<example>{\"id\": \"https://notion.so/workspace/Page-a1b2c3d4e5f67890\"}</example>\n<example>{\"id\": \"12345678-90ab-cdef-1234-567890abcdef\"}</example>\n<example>{\"id\": \"https://myspace.notion.site/Page-Title-abc123def456\"}</example>\n<example>{\"id\": \"page-uuid\", \"include_discussions\": true}</example>\n<example>{\"id\": \"collection://12345678-90ab-cdef-1234-567890abcdef\"}</example>\n<example>{\"id\": \"self\"}</example>",
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "id": {
+        "type": "string",
+        "description": "The ID or URL of the Notion page, database, or data source to fetch. Supports notion.so URLs, Notion Sites URLs (*.notion.site), raw UUIDs, and data source URLs (collection://...). Pass \"self\" to fetch the connected workspace and user identity."
+      },
+      "include_transcript": {
+        "description": "Whether to include meeting note transcripts. Defaults to false. When true, full transcripts are included; when false, a placeholder with the meeting note URL is shown instead.",
+        "type": "boolean"
+      },
+      "include_discussions": {
+        "description": "Whether to include discussion/comment indicators in the page output. When true, adds a <page-discussions> summary with discussion count, preview snippets, and discussion:// URLs. Use with the get_comments tool to retrieve full discussion content. Defaults to false.",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "additionalProperties": {}
+  }
+}

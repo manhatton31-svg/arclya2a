@@ -1,0 +1,35 @@
+{
+  "name": "getMetricTagValues",
+  "description": "List all values for a specific tag in a metrics dataset (kind `otel-metrics-v1`). Useful for discovering filter values before querying.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "datasetName": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The dataset name. You can find an list of datasets using the `listDatasets()` tool."
+      },
+      "tag": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The tag name to list values for."
+      },
+      "startTime": {
+        "type": "string",
+        "default": "now-30m",
+        "description": "Start time for the query range. A fixed (RFC3339) or relative (now, now-5m) time value. Defaults to \"now-30m\"."
+      },
+      "endTime": {
+        "type": "string",
+        "default": "now",
+        "description": "End time for the query range. A fixed (RFC3339) or relative (now, now-5m) time value. Defaults to \"now\"."
+      }
+    },
+    "required": [
+      "datasetName",
+      "tag"
+    ],
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+}

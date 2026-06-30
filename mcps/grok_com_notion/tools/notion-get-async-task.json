@@ -1,0 +1,19 @@
+{
+  "name": "notion-get-async-task",
+  "description": "Retrieves the current status of an async task that was started by another tool (for example, \"create_pages\" called with \"allow_async\": true).\n\nThe status is one of \"queued\", \"running\", \"retrying\", \"succeeded\", or \"failed\". When the task has succeeded, the operation's result is included; when it has failed, an error is included instead.\n\nPoll this tool with the \"task_id\" from the original tool's \"async_task\" response. Wait briefly between polls — the original response includes a suggested backoff.\n\n<examples>\n1. Check a task's status: {\"task_id\": \"task_abc123\"}\n</examples>",
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "task_id": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The ID of the async task to retrieve, as returned in the async_task response of the tool that started it."
+      }
+    },
+    "required": [
+      "task_id"
+    ],
+    "additionalProperties": {}
+  }
+}

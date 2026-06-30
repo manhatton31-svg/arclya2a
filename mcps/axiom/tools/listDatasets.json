@@ -1,0 +1,9 @@
+{
+  "name": "listDatasets",
+  "description": "List all available datasets. The \"kind\" column determines which tools to use next:\n- events / otel.traces / other: use queryDataset() (APL) and getDatasetFields()\n- otel-metrics-v1: start with listMetrics() to inspect metric definitions and choose query strategy, then use queryMetrics(), searchMetrics(), listMetricTags(), and getMetricTagValues() — do NOT use queryDataset() or getDatasetFields() for these",
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {}
+  }
+}

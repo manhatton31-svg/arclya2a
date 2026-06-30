@@ -1,0 +1,15 @@
+{
+  "name": "get_themes",
+  "description": "Fetches available themes. Call this when the user describes visual styling (e.g., 'professional', 'colorful', 'modern', 'cute') or explicitly requests a theme. Skip this tool if the user makes no mention of themes or styling - Gamma's default theme works well. Query by name if the user references a specific theme; otherwise fetch the full list and match tone/color keywords to user preferences and topic.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "description": "Search themes by name (optional, only include when user specifically references a theme by name)"
+      }
+    },
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+}

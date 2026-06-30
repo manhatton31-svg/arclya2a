@@ -1,0 +1,33 @@
+{
+  "name": "search_sentry_tools",
+  "description": "Search the available Sentry MCP tool catalog by name and description.\n\nMany Sentry operations are intentionally not exposed as top-level tools. Use this for any Sentry-related task when you do not see an obvious direct tool, including long-tail inspection, project management, documentation lookup, preprod snapshots, attachments, DSNs, releases, teams, and issue-specific pivots.\n\nUse this tool when you need to:\n- Find the right Sentry operation for a task\n- Discover catalog tools and their schemas for a task\n- Inspect the executable JSON input schema for an available tool\n\n<examples>\nsearch_sentry_tools(query='list projects')\nsearch_sentry_tools(query='issue details')\nsearch_sentry_tools(query='find dsn', limit=5)\nsearch_sentry_tools(query='snapshot image')\n</examples>\n\n<hints>\n- Results only include tools available in the current session.\n- If a Sentry operation is not listed as a direct tool, search here before deciding it is unavailable.\n- Returned schemas already account for active organization, project, and region constraints.\n- Use the returned name and schema when executing a catalog result.\n- This tool returns structured JSON. Do not parse markdown from its text content.\n</hints>",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Natural language keywords describing the Sentry operation, resource, or workflow to find."
+      },
+      "limit": {
+        "anyOf": [
+          {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 20
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": 8,
+        "description": "Maximum number of matching tools to return, up to 20."
+      }
+    },
+    "required": [
+      "query"
+    ],
+    "additionalProperties": false,
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+}
