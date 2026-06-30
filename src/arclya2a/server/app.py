@@ -11,7 +11,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from arclya2a.orchestrator.engine import Orchestrator
-from arclya2a.xai.client import XAIClient, assemble_prompt, select_model
+from arclya2a.xai.client import XAIClient
+from arclya2a.xai.prompt_helpers import assemble_agent_prompt, assembly_to_response
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -62,9 +63,17 @@ class HandoffChainRequest(BaseModel):
     estimated_cost_usd: float = 5.0
 
 
-def create_app(root: Path | None = None) -> FastAPI:
+def create_app(root: Path | None = None, xai_client: XAIClient | None = None) -> FastAPI:
     root = root or ROOT
     app = FastAPI(title="Arclya A2A", version="0.1.0")
+    app.state.root = root
+    app.state.xai_client = xai_client
+
+    def _orchestrator() -> Orchestrator:
+        client = app.state.xai_client
+        if client is None:
+            client = XAIClient(app.state.root)
+        return Orchestrator(app.state.root, xai_client=client)
 
     @app.get("/.well-known/agent-card.json")
     async def agent_card() -> JSONResponse:
@@ -77,7 +86,7 @@ def create_app(root: Path | None = None) -> FastAPI:
 
     @app.post("/orchestrate/handoff-chain")
     async def handoff_chain(req: HandoffChainRequest) -> dict[str, Any]:
-        orchestrator = Orchestrator(root)
+        orchestrator = _orchestrator()
         initial_ssot = {
             "deal_id": req.deal_id,
             "summary": f"New deal with {req.customer_company}",
@@ -98,11 +107,12 @@ def create_app(root: Path | None = None) -> FastAPI:
             "audit_ids": result.audit_ids,
             "cost_records": result.cost_records,
             "emergency_stop": result.emergency_stop,
+            "uses_xai_inference": result.uses_xai_inference,
         }
 
     @app.post("/learning/campaign")
     async def campaign_learning() -> dict[str, Any]:
-        orchestrator = Orchestrator(root)
+        orchestrator = _orchestrator()
         result = orchestrator.run_chain(
             chain=["meta_optimizer"],
             initial_ssot={"deal_id": "learning", "summary": "Campaign learning", "stage": "closed", "metadata": {}},
@@ -113,38 +123,16 @@ def create_app(root: Path | None = None) -> FastAPI:
             "handoff": handoff,
             "prompt_patch": handoff.get("payload", {}).get("prompt_patch"),
             "improvement_signal": handoff.get("payload", {}).get("improvement_signal"),
+            "uses_xai_inference": result.uses_xai_inference,
+            "cost_records": result.cost_records,
         }
 
     @app.get("/prompt/assembly/{agent_id}")
     async def prompt_assembly(agent_id: str) -> dict[str, Any]:
-        prompt_path = root / "prompts" / f"{agent_id}.md"
-        if not prompt_path.exists():
+        if not (root / "prompts" / f"{agent_id}.md").exists():
             raise HTTPException(status_code=404, detail=f"No prompt for {agent_id}")
-        core = load_core_config()
-        model = select_model("economy", core)
-        assembly = assemble_prompt(
-            prompt_path,
-            agent_id=agent_id,
-            model=model,
-            variables={
-                "ssot_snapshot": '{"deal_id":"demo"}',
-                "memory_summary": "stage=new",
-                "task_context": "demo task",
-                "handoff_payload": "{}",
-                "pricing_snapshot": "{}",
-                "content_payload": "{}",
-                "campaign_results": "[]",
-                "predictions": "{}",
-            },
-        )
-        return {
-            "agent_id": assembly.agent_id,
-            "model": assembly.model,
-            "cacheable_instructions": assembly.cacheable_instructions,
-            "dynamic_context": assembly.dynamic_context,
-            "has_cacheable_section": bool(assembly.cacheable_instructions),
-            "has_dynamic_section": bool(assembly.dynamic_context),
-        }
+        assembly = assemble_agent_prompt(root, agent_id)
+        return assembly_to_response(assembly)
 
     return app
 

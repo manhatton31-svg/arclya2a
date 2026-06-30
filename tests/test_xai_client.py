@@ -40,6 +40,17 @@ def test_record_cost(root):
     assert record["agent_id"] == "outreach_worker"
 
 
+def test_chat_completion_returns_cost_record(root, mock_xai):
+    client = mock_xai
+    data = client.chat_completion(
+        messages=[{"role": "user", "content": "hi"}],
+        model="grok-3-mini",
+        agent_id="outreach_worker",
+    )
+    assert "cost_record" in data
+    assert data["cost_record"]["cost_usd"] >= 0
+
+
 def test_xai_call_requires_api_key(root):
     client = XAIClient(root, api_key=None)
     old = os.environ.pop("XAI_API_KEY", None)

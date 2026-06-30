@@ -1,7 +1,13 @@
-from arclya2a.learning.prompt_updater import apply_learning_signal, load_learned_context
+from arclya2a.learning.prompt_updater import (
+    apply_learning_signal,
+    load_learned_context,
+    merge_effective_prompt,
+    rollback_prompt,
+    snapshot_prompt_version,
+)
 
 
-def test_apply_learning_signal_writes_overlay(root):
+def test_apply_learning_signal_writes_effective_prompt(root):
     signal = {
         "campaign_id": "camp_test",
         "improvement_signal": {
@@ -13,6 +19,17 @@ def test_apply_learning_signal_writes_overlay(root):
     }
     result = apply_learning_signal(root, signal)
     assert result["agent_id"] == "outreach_worker"
-    assert (root / "learning" / "prompt_patches" / "outreach_worker.json").exists()
+    assert result["effective_file"]
+    assert (root / "prompts" / "outreach_worker_effective.md").exists()
     learned = load_learned_context(root, "outreach_worker")
     assert "shorter subject" in learned
+
+
+def test_rollback_prompt(root):
+    merge_effective_prompt(root, "outreach_worker", ["Rollback test recommendation"])
+    version = snapshot_prompt_version(root, "outreach_worker")
+    merge_effective_prompt(root, "outreach_worker", ["New recommendation overwrites"])
+    restored = rollback_prompt(root, "outreach_worker", version)
+    assert restored["restored_version"] == version
+    text = (root / "prompts" / "outreach_worker_effective.md").read_text(encoding="utf-8")
+    assert "Rollback test" in text

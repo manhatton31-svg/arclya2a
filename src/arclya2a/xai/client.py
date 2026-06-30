@@ -139,11 +139,12 @@ class XAIClient:
             data = resp.json()
 
         usage = data.get("usage", {})
-        self.record_cost(
+        cost_record = self.record_cost(
             agent_id=agent_id,
             model=model,
             input_tokens=usage.get("prompt_tokens", 0),
             output_tokens=usage.get("completion_tokens", 0),
             cached_input_tokens=usage.get("cached_tokens", 0),
         )
+        data["cost_record"] = cost_record
         return data

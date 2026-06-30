@@ -30,6 +30,7 @@ class OrchestrationResult:
     audit_ids: list[str] = field(default_factory=list)
     cost_records: list[dict[str, Any]] = field(default_factory=list)
     emergency_stop: bool = False
+    uses_xai_inference: bool = False
 
 
 class Orchestrator:
@@ -128,10 +129,9 @@ class Orchestrator:
                 if feedback:
                     handoff["feedback"] = feedback
 
-            if handoff.get("inference", {}).get("prompt_assembled"):
-                cost_records.append(
-                    {"agent_id": agent_id, "source": "xai_chat_completion", "recorded": True}
-                )
+            cost_record = handoff.get("inference", {}).get("cost_record")
+            if cost_record:
+                cost_records.append(cost_record)
 
             if handoff["status"] == "EMERGENCY_STOP":
                 return OrchestrationResult(
@@ -140,6 +140,7 @@ class Orchestrator:
                     audit_ids=audit_ids,
                     cost_records=cost_records,
                     emergency_stop=True,
+                    uses_xai_inference=_compute_uses_xai(chain_results),
                 )
 
             previous_agent = agent_id
@@ -150,7 +151,15 @@ class Orchestrator:
             final_ssot=ssot,
             audit_ids=audit_ids,
             cost_records=cost_records,
+            uses_xai_inference=_compute_uses_xai(chain_results),
         )
+
+
+def _compute_uses_xai(chain_results: list[dict[str, Any]]) -> bool:
+    """True when every agent turn assembled a prompt for xAI inference."""
+    if not chain_results:
+        return False
+    return all(h.get("inference", {}).get("prompt_assembled") for h in chain_results)
 
 
 def _build_receiver_feedback(

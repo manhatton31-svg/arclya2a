@@ -73,5 +73,93 @@
       "conversion_rate": -0.01
     },
     "priority": "high"
+  },
+  {
+    "timestamp": "2026-06-30T20:25:39.415722+00:00",
+    "campaign_id": "camp_demo_001",
+    "recommendations": [
+      "Improve subject lines for open rate",
+      "Improve open_rate: underperformed by 7.00%",
+      "Improve reply_rate: underperformed by 3.00%"
+    ],
+    "deltas": {
+      "open_rate": -0.07,
+      "reply_rate": -0.03,
+      "conversion_rate": -0.01
+    },
+    "priority": "high",
+    "snapshot_version": "20260630T202539"
+  },
+  {
+    "timestamp": "2026-06-30T20:25:40.687059+00:00",
+    "campaign_id": "camp_test",
+    "recommendations": [
+      "Use shorter subject lines"
+    ],
+    "deltas": {
+      "open_rate": -0.05
+    },
+    "priority": "high",
+    "snapshot_version": "20260630T202540"
+  },
+  {
+    "timestamp": "2026-06-30T20:25:55.811071+00:00",
+    "campaign_id": "camp_demo_001",
+    "recommendations": [
+      "Improve subject lines for open rate",
+      "Improve open_rate: underperformed by 7.00%",
+      "Improve reply_rate: underperformed by 3.00%"
+    ],
+    "deltas": {
+      "open_rate": -0.07,
+      "reply_rate": -0.03,
+      "conversion_rate": -0.01
+    },
+    "priority": "high",
+    "snapshot_version": "20260630T202555"
+  },
+  {
+    "timestamp": "2026-06-30T20:26:05.578592+00:00",
+    "campaign_id": "camp_demo_001",
+    "recommendations": [
+      "Improve subject lines for open rate",
+      "Improve open_rate: underperformed by 7.00%",
+      "Improve reply_rate: underperformed by 3.00%"
+    ],
+    "deltas": {
+      "open_rate": -0.07,
+      "reply_rate": -0.03,
+      "conversion_rate": -0.01
+    },
+    "priority": "high",
+    "snapshot_version": "20260630T202605"
+  },
+  {
+    "timestamp": "2026-06-30T20:26:06.791386+00:00",
+    "campaign_id": "camp_test",
+    "recommendations": [
+      "Use shorter subject lines"
+    ],
+    "deltas": {
+      "open_rate": -0.05
+    },
+    "priority": "high",
+    "snapshot_version": "20260630T202606"
+  },
+  {
+    "timestamp": "2026-06-30T20:26:13.454552+00:00",
+    "campaign_id": "camp_demo_001",
+    "recommendations": [
+      "test rec",
+      "Improve open_rate: underperformed by 7.00%",
+      "Improve reply_rate: underperformed by 3.00%"
+    ],
+    "deltas": {
+      "open_rate": -0.07,
+      "reply_rate": -0.03,
+      "conversion_rate": -0.01
+    },
+    "priority": "high",
+    "snapshot_version": "20260630T202613"
   }
 ]

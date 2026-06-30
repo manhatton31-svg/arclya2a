@@ -1,4 +1,4 @@
-"""Run verification plan and capture SCRATCH evidence."""
+"""Run verification plan and capture SCRATCH evidence via shipped HTTP endpoints."""
 
 from __future__ import annotations
 
@@ -17,9 +17,8 @@ SCRATCH.mkdir(parents=True, exist_ok=True)
 sys.path.insert(0, str(ROOT / "src"))
 
 from arclya2a.learning.campaign_loop import run_campaign_learning_loop
-from arclya2a.orchestrator.engine import Orchestrator
 from arclya2a.server.app import create_app
-from arclya2a.xai.client import XAIClient, assemble_prompt, select_model
+from arclya2a.xai.client import XAIClient
 from fastapi.testclient import TestClient
 
 _AGENT_CONTEXT = {"id": "outreach_worker"}
@@ -29,21 +28,25 @@ def _mock_responses(agent_id: str) -> dict:
     mapping = {
         "outreach_worker": {
             "status": "COMPLETE",
+            "next_action": "handoff_to_profit_guardrail",
             "draft": {"subject": "Verify subject", "body": "Verify body"},
             "validation": {"confidence": 78, "check": "ok"},
             "preference_handshake": {"format": "json", "accepted": True},
         },
         "profit_guardrail": {
             "status": "COMPLETE",
+            "next_action": "handoff_to_final_arbiter",
             "validation": {"confidence": 92, "check": "margin ok"},
         },
         "final_arbiter": {
             "status": "COMPLETE",
+            "next_action": "deliver_to_customer",
             "qc_result": {"passed": True, "issues": []},
             "validation": {"confidence": 94, "check": "qc ok"},
         },
         "meta_optimizer": {
             "status": "COMPLETE",
+            "next_action": "update_learning_store",
             "improvement_signal": {"recommendations": ["test rec"], "priority": "high"},
             "validation": {"confidence": 85, "check": "signal ok"},
         },
@@ -51,7 +54,9 @@ def _mock_responses(agent_id: str) -> dict:
     return mapping.get(agent_id, {"status": "COMPLETE", "validation": {"confidence": 70, "check": "ok"}})
 
 
-def _install_xai_mock() -> XAIClient:
+def _build_mock_client() -> XAIClient:
+    import json as json_module
+
     original = XAIClient.chat_completion
 
     def wrapped(self, *, messages, model, agent_id):
@@ -69,15 +74,17 @@ def _install_xai_mock() -> XAIClient:
         }
         return response
 
-    import json as json_module
-
     httpx.Client.post = fake_post
     XAIClient.chat_completion = wrapped
     return XAIClient(ROOT, api_key="verify-mock-key")
 
 
+def _test_client() -> TestClient:
+    return TestClient(create_app(ROOT, xai_client=_build_mock_client()))
+
+
 def capture_agent_cards():
-    client = TestClient(create_app(ROOT))
+    client = _test_client()
     for i in (1, 2):
         resp = client.get("/.well-known/agent-card.json")
         data = resp.json()
@@ -85,50 +92,24 @@ def capture_agent_cards():
 
 
 def capture_handoff_chain():
-    mock_client = _install_xai_mock()
-    orchestrator = Orchestrator(ROOT, xai_client=mock_client)
-    result = orchestrator.run_chain(
-        initial_ssot={
+    client = _test_client()
+    resp = client.post(
+        "/orchestrate/handoff-chain",
+        json={
             "deal_id": "deal_verify_001",
-            "summary": "Verification deal",
-            "customer": {"company": "VerifyCo"},
-            "deal_value_usd": 49.0,
-            "stage": "new",
-            "metadata": {},
+            "customer_company": "VerifyCo",
+            "task_context": "Verification handoff chain",
+            "revenue_usd": 49.0,
+            "estimated_cost_usd": 5.0,
         },
-        task_context="Verification handoff chain",
-        revenue_usd=49.0,
-        estimated_cost_usd=5.0,
     )
-    payload = {
-        "handoff_chain": result.handoff_chain,
-        "final_ssot": result.final_ssot,
-        "audit_ids": result.audit_ids,
-        "cost_records": result.cost_records,
-        "uses_xai_inference": all(
-            h.get("inference", {}).get("prompt_assembled") for h in result.handoff_chain
-        ),
-    }
-    (SCRATCH / "handoff-chain.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    (SCRATCH / "handoff-chain.json").write_text(json.dumps(resp.json(), indent=2), encoding="utf-8")
 
 
 def capture_prompt_assembly():
-    with open(ROOT / "config" / "core.json", encoding="utf-8") as f:
-        core = json.load(f)
-    model = select_model("economy", core)
-    assembly = assemble_prompt(
-        ROOT / "prompts" / "outreach_worker.md",
-        agent_id="outreach_worker",
-        model=model,
-        variables={"ssot_snapshot": "{}", "memory_summary": "m", "task_context": "verify", "learned_context": ""},
-    )
-    out = {
-        "cacheable_instructions": assembly.cacheable_instructions,
-        "dynamic_context": assembly.dynamic_context,
-        "model": assembly.model,
-        "separated": bool(assembly.cacheable_instructions) and bool(assembly.dynamic_context),
-    }
-    (SCRATCH / "prompt-assembly.json").write_text(json.dumps(out, indent=2), encoding="utf-8")
+    client = _test_client()
+    resp = client.get("/prompt/assembly/outreach_worker")
+    (SCRATCH / "prompt-assembly.json").write_text(json.dumps(resp.json(), indent=2), encoding="utf-8")
 
 
 def capture_xai_call():
@@ -145,7 +126,7 @@ def capture_xai_call():
             agent_id="verify",
         )
         log_path.write_text(
-            json.dumps({"host": client.XAI_HOST, "model": "grok-3-mini", "response": data}, indent=2),
+            json.dumps({"host": client.XAI_HOST, "model": "grok-3-mini", "cost_record": data.get("cost_record")}, indent=2),
             encoding="utf-8",
         )
     except Exception as e:
@@ -156,17 +137,9 @@ def capture_learning_loop():
     with open(ROOT / "data" / "campaign_results" / "fixtures.json", encoding="utf-8") as f:
         row = json.load(f)[0]
     signal = run_campaign_learning_loop(ROOT, row)
-    mock_client = _install_xai_mock()
-    orchestrator = Orchestrator(ROOT, xai_client=mock_client)
-    opt_result = orchestrator.run_chain(
-        chain=["meta_optimizer"],
-        initial_ssot={"deal_id": "learning", "summary": "Campaign", "stage": "closed", "metadata": {}},
-        task_context="Analyze",
-    )
-    out = {
-        "signal": signal.to_dict(),
-        "meta_optimizer_patch": opt_result.handoff_chain[0].get("payload", {}).get("prompt_patch"),
-    }
+    client = _test_client()
+    resp = client.post("/learning/campaign")
+    out = {"signal": signal.to_dict(), "http_response": resp.json()}
     (SCRATCH / "learning-loop.json").write_text(json.dumps(out, indent=2), encoding="utf-8")
 
 

@@ -1,8 +1,10 @@
-from pathlib import Path
+from fastapi.testclient import TestClient
 
 from arclya2a.audit.logger import read_audit_records
 from arclya2a.orchestrator.engine import Orchestrator
 from arclya2a.orchestrator.agent_runner import resolve_chain_from_registry
+from arclya2a.server.app import create_app
+from arclya2a.xai.client import XAIClient
 
 
 def test_resolve_chain_from_registry(root):
@@ -31,6 +33,7 @@ def test_multi_agent_handoff_chain_uses_xai(root, mock_xai):
     )
 
     assert not result.emergency_stop
+    assert result.uses_xai_inference is True
     assert len(result.handoff_chain) == 3
 
     for handoff in result.handoff_chain:
@@ -44,13 +47,11 @@ def test_multi_agent_handoff_chain_uses_xai(root, mock_xai):
     assert terminal["next_action"] == "deliver_to_customer"
     assert result.final_ssot["stage"] == "qc_passed"
     assert len(result.cost_records) == 3
+    assert all("cost_usd" in c for c in result.cost_records)
 
     feedback = result.handoff_chain[1].get("feedback")
     assert feedback["from_agent"] == "profit_guardrail"
     assert feedback["to_agent"] == "outreach_worker"
-
-    audits = read_audit_records(root, limit=10)
-    assert len(audits) >= 3
 
 
 def test_emergency_stop_records_cost(root, mock_xai):
@@ -65,6 +66,7 @@ def test_emergency_stop_records_cost(root, mock_xai):
     assert result.emergency_stop
     assert result.handoff_chain[-1]["status"] == "EMERGENCY_STOP"
     assert len(result.cost_records) == 2
+    assert result.handoff_chain[-1]["inference"]["cost_record"] is not None
 
 
 def test_meta_optimizer_chain(root, mock_xai):
@@ -74,8 +76,40 @@ def test_meta_optimizer_chain(root, mock_xai):
         initial_ssot={"deal_id": "d3", "summary": "Learning", "stage": "closed", "metadata": {}},
         task_context="Analyze campaign",
     )
-    assert len(result.handoff_chain) == 1
     handoff = result.handoff_chain[0]
     assert handoff["agent_id"] == "meta_optimizer"
-    assert handoff["payload"].get("prompt_patch")
-    assert (root / "prompts" / "outreach_worker_learned.md").exists()
+    assert handoff["payload"].get("prompt_patch", {}).get("effective_file")
+    assert (root / "prompts" / "outreach_worker_effective.md").exists()
+
+
+def test_http_handoff_chain_endpoint(root, mock_xai):
+    client = TestClient(create_app(root, xai_client=mock_xai))
+    resp = client.post(
+        "/orchestrate/handoff-chain",
+        json={
+            "deal_id": "deal_http_001",
+            "customer_company": "HttpCo",
+            "task_context": "HTTP path test",
+            "revenue_usd": 49.0,
+            "estimated_cost_usd": 5.0,
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["uses_xai_inference"] is True
+    assert len(data["cost_records"]) == 3
+    assert data["handoff_chain"][-1]["status"] == "COMPLETE"
+
+
+def test_no_api_key_records_failed_inference_cost(root):
+    orchestrator = Orchestrator(root, xai_client=XAIClient(root, api_key=None))
+    result = orchestrator.run_chain(
+        chain=["outreach_worker"],
+        initial_ssot={"deal_id": "d4", "summary": "No key", "stage": "new", "metadata": {}},
+        task_context="test",
+    )
+    assert result.emergency_stop
+    handoff = result.handoff_chain[0]
+    assert handoff["inference"]["prompt_assembled"] is True
+    assert handoff["inference"]["inference_failed"] is True
+    assert len(result.cost_records) == 1

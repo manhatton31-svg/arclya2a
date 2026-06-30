@@ -7,8 +7,8 @@ import re
 from pathlib import Path
 from typing import Any
 
-from arclya2a.learning.campaign_loop import run_campaign_learning_loop
-from arclya2a.learning.prompt_updater import apply_learning_signal, load_learned_context
+from arclya2a.learning.campaign_loop import compute_deltas, build_recommendations
+from arclya2a.learning.prompt_updater import apply_learning_signal, load_learned_context, resolve_prompt_path
 from arclya2a.orchestrator.error_policy import (
     AgentExecutionError,
     execute_with_error_policy,
@@ -16,7 +16,6 @@ from arclya2a.orchestrator.error_policy import (
 )
 from arclya2a.pricing.margin import check_margin_guardrail, load_pricing_menu
 from arclya2a.xai.client import XAIClient, assemble_prompt, select_model
-
 
 def resolve_chain_from_registry(agents: dict[str, Any], start_id: str) -> list[str]:
     """Build chain by following handoff_targets from registry."""
@@ -62,7 +61,6 @@ def _build_prompt_variables(
     if campaign_path.exists():
         campaign_rows = json.loads(campaign_path.read_text(encoding="utf-8"))
 
-    learned = load_learned_context(root, agent["id"])
     return {
         "ssot_snapshot": json.dumps(ssot, indent=2),
         "memory_summary": context.get("memory_summary", ssot.get("summary", "")),
@@ -75,19 +73,25 @@ def _build_prompt_variables(
             campaign_rows[0].get("predicted", {}) if campaign_rows else {},
             indent=2,
         ),
-        "learned_context": learned,
+        "learned_context": load_learned_context(root, agent["id"]),
         "role_card": agent.get("role_card", ""),
         "good_enough": agent.get("good_enough", ""),
     }
 
 
-def _infer_xai(agent: dict[str, Any], root: Path, context: dict[str, Any], xai_client: XAIClient | None) -> dict[str, Any]:
-    """Call xAI with assembled prompt; returns parsed JSON handoff fields."""
+def _infer_xai(
+    agent: dict[str, Any],
+    root: Path,
+    context: dict[str, Any],
+    xai_client: XAIClient | None,
+    inference_meta: dict[str, Any],
+) -> dict[str, Any]:
+    """Call xAI with assembled prompt; returns (parsed handoff, inference metadata)."""
     client = xai_client or XAIClient(root, api_key=context.get("xai_api_key"))
     with open(root / "config" / "core.json", encoding="utf-8") as f:
         core = json.load(f)
     model = select_model(agent.get("model_tier", "economy"), core)
-    prompt_path = root / "prompts" / f"{agent['id']}.md"
+    prompt_path = resolve_prompt_path(root, agent["id"])
     if not prompt_path.exists():
         raise FileNotFoundError(f"Missing prompt file: {prompt_path}")
 
@@ -99,31 +103,44 @@ def _infer_xai(agent: dict[str, Any], root: Path, context: dict[str, Any], xai_c
         variables=variables,
     )
 
-    dynamic = assembly.dynamic_context
-    if variables.get("learned_context"):
-        dynamic = f"{dynamic}\n\n{variables['learned_context']}"
+    inference_meta.update({
+        "model": model,
+        "prompt_assembled": True,
+        "cost_record": None,
+        "inference_failed": False,
+    })
 
     def _call() -> dict[str, Any]:
         data = client.chat_completion(
             messages=[
                 {"role": "system", "content": assembly.cacheable_instructions},
-                {"role": "user", "content": dynamic},
+                {"role": "user", "content": assembly.dynamic_context},
             ],
             model=model,
             agent_id=agent["id"],
         )
+        inference_meta["cost_record"] = data.get("cost_record")
         content = data["choices"][0]["message"]["content"]
         parsed = parse_agent_json_response(content)
-        parsed["_xai_model"] = model
-        parsed["_prompt_assembled"] = True
         return parsed
 
-    return execute_with_error_policy(
-        agent.get("error_policy", "retry_once_then_escalate"),
-        _call,
-        root=root,
-        agent_id=agent["id"],
-    )
+    try:
+        return execute_with_error_policy(
+            agent.get("error_policy", "retry_once_then_escalate"),
+            _call,
+            root=root,
+            agent_id=agent["id"],
+        )
+    except AgentExecutionError:
+        inference_meta["inference_failed"] = True
+        inference_meta["cost_record"] = client.record_cost(
+            agent_id=agent["id"],
+            model=model,
+            input_tokens=0,
+            output_tokens=0,
+            cached_input_tokens=0,
+        )
+        raise
 
 
 def _apply_handoff_targets(agent: dict[str, Any], handoff: dict[str, Any]) -> dict[str, Any]:
@@ -141,21 +158,16 @@ def _check_success_metrics(agent: dict[str, Any], handoff: dict[str, Any]) -> di
     conf = validation.get("confidence", 0)
     metrics = agent.get("success_metrics", {})
 
-    if agent["id"] == "outreach_worker":
-        min_conf = 70
-        if conf < min_conf:
-            validation["check"] = f"Below good_enough threshold ({min_conf}): {validation.get('check', '')}"
+    if agent["id"] == "outreach_worker" and conf < 70:
+        validation["check"] = f"Below good_enough threshold (70): {validation.get('check', '')}"
 
-    if agent["id"] == "profit_guardrail":
-        min_conf = 85
-        if conf < min_conf and handoff.get("status") == "COMPLETE":
-            validation["check"] = f"Margin check confidence {conf} < {min_conf}"
+    if agent["id"] == "profit_guardrail" and conf < 85 and handoff.get("status") == "COMPLETE":
+        validation["check"] = f"Margin check confidence {conf} < 85"
 
     if agent["id"] == "final_arbiter":
-        min_conf = 90
         qc = handoff.get("payload", {}).get("qc_result", {})
-        if qc.get("passed") and conf < min_conf:
-            validation["check"] = f"QC pass confidence {conf} < {min_conf}"
+        if qc.get("passed") and conf < 90:
+            validation["check"] = f"QC pass confidence {conf} < 90"
 
     if agent["id"] == "meta_optimizer":
         min_quality = metrics.get("improvement_signal_quality", 80)
@@ -166,10 +178,10 @@ def _check_success_metrics(agent: dict[str, Any], handoff: dict[str, Any]) -> di
     return handoff
 
 
-def _enrich_profit_guardrail(
+def _validate_profit_guardrail(
     agent: dict[str, Any], handoff: dict[str, Any], root: Path, context: dict[str, Any]
 ) -> dict[str, Any]:
-    """Deterministic margin veto with veto_power from registry."""
+    """Attach margin math; veto only when margin fails (constitutional veto_power)."""
     result = check_margin_guardrail(
         root,
         revenue_usd=context["revenue_usd"],
@@ -188,88 +200,85 @@ def _enrich_profit_guardrail(
         handoff["next_action"] = "halt_deal_margin_violation"
         handoff["ssot_updates"] = handoff.get("ssot_updates") or {"stage": "margin_vetoed"}
         handoff["validation"] = {
-            "confidence": 95,
+            "confidence": max(handoff.get("validation", {}).get("confidence", 0), 95),
             "check": result.veto_reason or "Vetoed by profit guardrail",
         }
     elif handoff.get("status") == "COMPLETE":
-        targets = agent.get("handoff_targets", [])
-        handoff["next_action"] = f"handoff_to_{targets[0]}" if targets else "continue"
-        handoff["ssot_updates"] = handoff.get("ssot_updates") or {
-            "stage": "margin_approved",
-            "metadata": {"margin_percent": result.margin_percent},
-        }
-        handoff["validation"] = handoff.get("validation") or {
-            "confidence": 92,
-            "check": f"Margin {result.margin_percent:.1f}% approved",
-        }
+        updates = handoff.get("ssot_updates") or {}
+        updates.setdefault("metadata", {})["margin_percent"] = result.margin_percent
+        handoff["ssot_updates"] = updates
 
     return handoff
 
 
-def _enrich_final_arbiter(
+def _validate_final_arbiter(
     agent: dict[str, Any], handoff: dict[str, Any], root: Path, context: dict[str, Any]
 ) -> dict[str, Any]:
-    """Merge SSOT draft into QC payload."""
+    """Supplement LLM QC with SSOT draft; only fail if structural fields missing."""
     ssot = context["ssot"]
     draft = ssot.get("metadata", {}).get("draft", {})
     payload = handoff.setdefault("payload", {})
     qc = payload.get("qc_result", {})
     issues = list(qc.get("issues", []))
+
     if not draft.get("subject"):
         issues.append("Missing subject line")
     if not draft.get("body"):
         issues.append("Missing body")
-    passed = qc.get("passed", True) and len(issues) == 0
+
+    passed = qc.get("passed", False) and len(issues) == 0
     payload["qc_result"] = {"passed": passed, "issues": issues}
     payload["draft"] = draft
 
-    if passed:
-        handoff["status"] = "COMPLETE"
-        handoff["next_action"] = "deliver_to_customer"
+    if passed and handoff.get("status") == "COMPLETE":
         handoff["ssot_updates"] = handoff.get("ssot_updates") or {"stage": "qc_passed"}
-    else:
+    elif not passed and handoff.get("status") == "COMPLETE":
         policy = agent.get("error_policy", "reject_and_return")
         if policy == "reject_and_return":
-            handoff["status"] = "COMPLETE"
             handoff["next_action"] = "return_to_outreach_worker"
             handoff["ssot_updates"] = handoff.get("ssot_updates") or {"stage": "qc_failed"}
 
     return handoff
 
 
-def _enrich_meta_optimizer(
+def _validate_meta_optimizer(
     agent: dict[str, Any], handoff: dict[str, Any], root: Path, context: dict[str, Any]
 ) -> dict[str, Any]:
-    """Run campaign learning loop and apply prompt patches."""
+    """Merge LLM improvement_signal with computed campaign deltas; apply patches."""
     fixtures_path = root / "data" / "campaign_results" / "fixtures.json"
     rows = json.loads(fixtures_path.read_text(encoding="utf-8"))
-    signal = run_campaign_learning_loop(root, rows[0])
+    row = rows[0]
+    deltas = compute_deltas(row["predicted"], row["actual"])
+    computed_recs = build_recommendations(deltas)
 
     llm_signal = handoff.get("payload", {}).get("improvement_signal", {})
+    merged_recs = list(dict.fromkeys(
+        (llm_signal.get("recommendations") or []) + computed_recs
+    ))
+
     merged_signal = {
-        "campaign_id": signal.campaign_id,
-        "deltas": signal.deltas,
-        "recommendations": signal.recommendations or llm_signal.get("recommendations", []),
-        "priority": signal.priority,
-        "improvement_signal": signal.improvement_signal,
+        "campaign_id": row["campaign_id"],
+        "deltas": deltas,
+        "recommendations": merged_recs,
+        "priority": llm_signal.get("priority", "high" if any(d < -0.05 for d in deltas.values()) else "medium"),
+        "meta_optimizer_target": "prompts/outreach_worker.md",
     }
     handoff.setdefault("payload", {})["improvement_signal"] = merged_signal
-    applied = apply_learning_signal(root, signal.to_dict())
-    handoff["payload"]["prompt_patch"] = applied
-    handoff["status"] = "COMPLETE"
-    handoff["next_action"] = "update_learning_store"
-    handoff["ssot_updates"] = handoff.get("ssot_updates") or {"stage": "learning_applied"}
-    handoff["validation"] = handoff.get("validation") or {
-        "confidence": 82,
-        "check": f"Applied {applied['patches_applied']} prompt patches",
-    }
+
+    if handoff.get("status") == "COMPLETE":
+        applied = apply_learning_signal(root, {
+            "campaign_id": row["campaign_id"],
+            "improvement_signal": merged_signal,
+        })
+        handoff["payload"]["prompt_patch"] = applied
+
     return handoff
 
 
-ENRICHERS = {
-    "profit_guardrail": _enrich_profit_guardrail,
-    "final_arbiter": _enrich_final_arbiter,
-    "meta_optimizer": _enrich_meta_optimizer,
+VALIDATORS = {
+    "profit_guardrail": _validate_profit_guardrail,
+    "final_arbiter": _validate_final_arbiter,
+    "meta_optimizer": _validate_meta_optimizer,
 }
 
 
@@ -280,33 +289,46 @@ def run_registry_agent(
     context: dict[str, Any],
     xai_client: XAIClient | None = None,
 ) -> dict[str, Any]:
-    """Execute one agent turn via xAI + registry enrichers."""
+    """Execute one agent turn via xAI; validators supplement LLM decisions."""
     context = {**context, "ssot": ssot}
+    inference_meta: dict[str, Any] = {
+        "model": None,
+        "prompt_assembled": False,
+        "cost_record": None,
+        "inference_failed": True,
+    }
 
     try:
-        llm_handoff = _infer_xai(agent, root, context, xai_client)
+        llm_handoff = _infer_xai(agent, root, context, xai_client, inference_meta)
     except AgentExecutionError as exc:
-        return handoff_from_policy_error(agent, exc)
+        err_handoff = handoff_from_policy_error(agent, exc)
+        err_handoff["inference"] = inference_meta
+        return err_handoff
 
     handoff = {
         "status": llm_handoff.get("status", "COMPLETE"),
         "next_action": llm_handoff.get("next_action", ""),
-        "payload": {k: v for k, v in llm_handoff.items() if k not in (
-            "status", "next_action", "ssot_updates", "validation",
-            "preference_handshake", "_xai_model", "_prompt_assembled",
-        )},
+        "payload": {
+            k: v
+            for k, v in llm_handoff.items()
+            if k
+            not in (
+                "status",
+                "next_action",
+                "ssot_updates",
+                "validation",
+                "preference_handshake",
+            )
+        },
         "ssot_updates": llm_handoff.get("ssot_updates"),
         "validation": llm_handoff.get("validation", {"confidence": 70, "check": "xAI turn"}),
         "preference_handshake": llm_handoff.get("preference_handshake"),
-        "inference": {
-            "model": llm_handoff.get("_xai_model"),
-            "prompt_assembled": llm_handoff.get("_prompt_assembled", False),
-        },
+        "inference": inference_meta,
     }
 
-    enricher = ENRICHERS.get(agent["id"])
-    if enricher:
-        handoff = enricher(agent, handoff, root, context)
+    validator = VALIDATORS.get(agent["id"])
+    if validator:
+        handoff = validator(agent, handoff, root, context)
 
     handoff = _apply_handoff_targets(agent, handoff)
     handoff = _check_success_metrics(agent, handoff)
@@ -320,7 +342,7 @@ def run_registry_agent(
                 "metadata": {"draft": draft},
             }
         targets = agent.get("handoff_targets", [])
-        if handoff.get("status") == "COMPLETE" and targets:
+        if handoff.get("status") == "COMPLETE" and targets and not handoff.get("next_action"):
             handoff["next_action"] = f"handoff_to_{targets[0]}"
 
     return handoff

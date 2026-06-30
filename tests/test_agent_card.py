@@ -29,3 +29,13 @@ def test_agent_card_endpoint():
     assert data["defaultInputModes"]
     assert data["defaultOutputModes"]
     assert len(data["skills"]) > 0
+
+
+def test_prompt_assembly_endpoint_includes_learned_context(root, mock_xai):
+    client = TestClient(create_app(root, xai_client=mock_xai))
+    resp = client.get("/prompt/assembly/outreach_worker")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["has_cacheable_section"]
+    assert data["has_dynamic_section"]
+    assert "{{learned_context}}" not in data["dynamic_context"]
