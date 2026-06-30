@@ -1,0 +1,77 @@
+[
+  {
+    "timestamp": "2026-06-30T20:20:37.123513+00:00",
+    "campaign_id": "camp_test",
+    "recommendations": [
+      "Use shorter subject lines"
+    ],
+    "deltas": {
+      "open_rate": -0.05
+    },
+    "priority": "high"
+  },
+  {
+    "timestamp": "2026-06-30T20:20:45.978523+00:00",
+    "campaign_id": "camp_demo_001",
+    "recommendations": [
+      "Improve open_rate: underperformed by 7.00%",
+      "Improve reply_rate: underperformed by 3.00%"
+    ],
+    "deltas": {
+      "open_rate": -0.07,
+      "reply_rate": -0.03,
+      "conversion_rate": -0.01
+    },
+    "priority": "high"
+  },
+  {
+    "timestamp": "2026-06-30T20:20:46.012745+00:00",
+    "campaign_id": "camp_test",
+    "recommendations": [
+      "Use shorter subject lines"
+    ],
+    "deltas": {
+      "open_rate": -0.05
+    },
+    "priority": "high"
+  },
+  {
+    "timestamp": "2026-06-30T20:20:57.789836+00:00",
+    "campaign_id": "camp_demo_001",
+    "recommendations": [
+      "Improve open_rate: underperformed by 7.00%",
+      "Improve reply_rate: underperformed by 3.00%"
+    ],
+    "deltas": {
+      "open_rate": -0.07,
+      "reply_rate": -0.03,
+      "conversion_rate": -0.01
+    },
+    "priority": "high"
+  },
+  {
+    "timestamp": "2026-06-30T20:20:57.805683+00:00",
+    "campaign_id": "camp_test",
+    "recommendations": [
+      "Use shorter subject lines"
+    ],
+    "deltas": {
+      "open_rate": -0.05
+    },
+    "priority": "high"
+  },
+  {
+    "timestamp": "2026-06-30T20:21:09.862363+00:00",
+    "campaign_id": "camp_demo_001",
+    "recommendations": [
+      "Improve open_rate: underperformed by 7.00%",
+      "Improve reply_rate: underperformed by 3.00%"
+    ],
+    "deltas": {
+      "open_rate": -0.07,
+      "reply_rate": -0.03,
+      "conversion_rate": -0.01
+    },
+    "priority": "high"
+  }
+]

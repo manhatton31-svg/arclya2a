@@ -35,4 +35,7 @@ Draft only. No pricing, no QC, no external send.
 
 ## Task
 {{task_context}}
+
+## Learned Context
+{{learned_context}}
 <!-- DYNAMIC_END -->

@@ -10,7 +10,6 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from arclya2a.learning.campaign_loop import run_campaign_learning_loop
 from arclya2a.orchestrator.engine import Orchestrator
 from arclya2a.xai.client import XAIClient, assemble_prompt, select_model
 
@@ -88,7 +87,6 @@ def create_app(root: Path | None = None) -> FastAPI:
             "metadata": {},
         }
         result = orchestrator.run_chain(
-            chain=["outreach_worker", "profit_guardrail", "final_arbiter"],
             initial_ssot=initial_ssot,
             task_context=req.task_context,
             revenue_usd=req.revenue_usd,
@@ -104,13 +102,18 @@ def create_app(root: Path | None = None) -> FastAPI:
 
     @app.post("/learning/campaign")
     async def campaign_learning() -> dict[str, Any]:
-        fixtures_path = root / "data" / "campaign_results" / "fixtures.json"
-        with open(fixtures_path, encoding="utf-8") as f:
-            rows = json.load(f)
-        if not rows:
-            raise HTTPException(status_code=404, detail="No campaign fixtures")
-        signal = run_campaign_learning_loop(root, rows[0])
-        return signal.to_dict()
+        orchestrator = Orchestrator(root)
+        result = orchestrator.run_chain(
+            chain=["meta_optimizer"],
+            initial_ssot={"deal_id": "learning", "summary": "Campaign learning", "stage": "closed", "metadata": {}},
+            task_context="Analyze latest campaign results",
+        )
+        handoff = result.handoff_chain[0] if result.handoff_chain else {}
+        return {
+            "handoff": handoff,
+            "prompt_patch": handoff.get("payload", {}).get("prompt_patch"),
+            "improvement_signal": handoff.get("payload", {}).get("improvement_signal"),
+        }
 
     @app.get("/prompt/assembly/{agent_id}")
     async def prompt_assembly(agent_id: str) -> dict[str, Any]:
