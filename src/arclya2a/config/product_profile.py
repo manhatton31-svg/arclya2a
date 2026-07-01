@@ -7,13 +7,50 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse, urlencode, parse_qs, urlunparse
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 VALID_PRICING_MODELS = {
     "subscription", "one_time", "usage_based", "hybrid", "success_based", "custom",
 }
 
 _URL_RE = re.compile(r"^https?://", re.IGNORECASE)
+
+VALIDATION_MESSAGES: dict[str, str] = {
+    "agent_name": "agent_name is required — your seller agent or company display name.",
+    "product_name": "product_name is required — the product or service you sell.",
+    "product_description": "product_description is required — 2–4 sentences describing your value proposition.",
+    "product_description(min_length)": "product_description must be at least 20 characters.",
+    "target_customer": "target_customer is required — who counts as a warm lead for your product.",
+    "typical_deal_size": "typical_deal_size is required — average deal value or pay-on-close range.",
+    "common_objections(min_3)": "common_objections must include at least 3 entries with brief context.",
+    "preferred_pricing_model": "preferred_pricing_model is required.",
+    "preferred_pricing_model(invalid)": (
+        f"preferred_pricing_model must be one of: {', '.join(sorted(VALID_PRICING_MODELS))}."
+    ),
+    "accepts_crypto": "accepts_crypto must be explicit true or false.",
+    "destination_link": "destination_link is required — HTTPS URL where partners route converted leads.",
+    "destination_link(invalid_url)": "destination_link must start with http:// or https://.",
+}
+
+
+def format_validation_errors(missing: list[str]) -> list[dict[str, str]]:
+    """Turn internal field codes into partner-friendly validation feedback."""
+    formatted: list[dict[str, str]] = []
+    for code in missing:
+        formatted.append({
+            "field": code.split("(")[0],
+            "code": code,
+            "message": VALIDATION_MESSAGES.get(code, f"Invalid or missing: {code}"),
+        })
+    return formatted
+
+
+def validation_summary(missing: list[str]) -> str:
+    """Single-line summary for handoff validation.check."""
+    if not missing:
+        return "Product profile complete and validated."
+    messages = [VALIDATION_MESSAGES.get(m, m) for m in missing]
+    return "Fix before completing onboarding: " + "; ".join(messages[:4])
 
 
 def load_product_profile_template(root: Path) -> dict[str, Any]:

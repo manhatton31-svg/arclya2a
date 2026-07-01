@@ -22,7 +22,7 @@
       "good_enough": "One recruitment draft with A2A CTA and confidence >= 75.",
       "model_tier": "economy",
       "error_policy": "retry_once_then_escalate",
-      "capabilities": ["agent_recruitment", "a2a_acquisition"],
+      "capabilities": ["agent_recruitment", "a2a_acquisition", "tool_use", "gmail", "google_calendar", "linear"],
       "handoff_targets": ["profit_guardrail"]
     },
     {
@@ -34,7 +34,7 @@
       "good_enough": "Close package with CTA, objection handling, confidence >= 85.",
       "model_tier": "standard",
       "error_policy": "reject_and_return",
-      "capabilities": ["a2a_closing", "objection_handling"],
+      "capabilities": ["a2a_closing", "objection_handling", "tool_use", "gmail", "google_calendar", "linear", "notion"],
       "handoff_targets": ["profit_guardrail"]
     },
     {

@@ -26,3 +26,6 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "rehearsal: sandbox partner lifecycle rehearsal (mocked xAI, in-process HTTP)",
+]

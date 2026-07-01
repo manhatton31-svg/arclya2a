@@ -17,9 +17,9 @@ def test_apply_learning_signal_writes_effective_prompt(root):
             "priority": "high",
         },
     }
-    result = apply_learning_signal(root, signal)
+    result = apply_learning_signal(root, signal, auto_apply=True)
     assert result["agent_id"] == "outreach_worker"
-    assert result["effective_file"]
+    assert result["patches_created"] >= 1
     assert (root / "prompts" / "outreach_worker_effective.md").exists()
     learned = load_learned_context(root, "outreach_worker")
     assert "shorter subject" in learned

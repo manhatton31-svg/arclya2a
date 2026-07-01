@@ -6,6 +6,8 @@ import logging
 from typing import Any
 
 from arclya2a.audit.logger import append_audit_record
+from arclya2a.observability.ops_events import record_ops_event
+from arclya2a.observability.structured_log import log_event
 
 logger = logging.getLogger("arclya2a.server")
 
@@ -33,13 +35,22 @@ def log_handoff_request_received(
     request_snapshot: dict[str, Any],
     client_ip: str | None,
 ) -> None:
-    logger.info(
-        "handoff_request_received client_id=%s caller_agent=%s ip=%s deal_id=%s snapshot=%s",
-        caller.get("client_id"),
-        caller.get("caller_agent"),
-        client_ip,
-        request_snapshot.get("deal_id"),
-        request_snapshot,
+    log_event(
+        logger,
+        "handoff_request_received",
+        client_id=caller.get("client_id"),
+        caller_agent=caller.get("caller_agent"),
+        ip=client_ip,
+        deal_id=request_snapshot.get("deal_id"),
+    )
+    record_ops_event(
+        root,
+        "handoff_request_received",
+        category="handoff",
+        data={
+            "deal_id": request_snapshot.get("deal_id"),
+            "client_id": caller.get("client_id"),
+        },
     )
     append_audit_record(
         root,
@@ -63,13 +74,13 @@ def log_handoff_chain_start(
     task_context: str,
     caller: dict[str, Any] | None = None,
 ) -> None:
-    logger.info(
-        "handoff_chain_start deal_id=%s client_id=%s auto_route=%s entry_agent=%s task=%s",
-        deal_id,
-        (caller or {}).get("client_id"),
-        auto_route,
-        entry_agent,
-        task_context[:120],
+    log_event(
+        logger,
+        "handoff_chain_start",
+        deal_id=deal_id,
+        client_id=(caller or {}).get("client_id"),
+        auto_route=auto_route,
+        entry_agent=entry_agent,
     )
 
 
@@ -84,16 +95,26 @@ def log_handoff_chain_complete(
     caller: dict[str, Any] | None = None,
     outcome_summary: dict[str, Any] | None = None,
 ) -> None:
-    logger.info(
-        "handoff_chain_complete deal_id=%s client_id=%s entry_agent=%s agents=%s "
-        "emergency_stop=%s outcome=%s audits=%d",
-        deal_id,
-        (caller or {}).get("client_id"),
-        entry_agent,
-        agents_executed,
-        emergency_stop,
-        outcome_summary,
-        len(audit_ids),
+    log_event(
+        logger,
+        "handoff_chain_complete",
+        deal_id=deal_id,
+        client_id=(caller or {}).get("client_id"),
+        entry_agent=entry_agent,
+        agents_executed=agents_executed,
+        emergency_stop=emergency_stop,
+        audit_count=len(audit_ids),
+    )
+    record_ops_event(
+        root,
+        "handoff_chain_complete",
+        category="handoff",
+        data={
+            "deal_id": deal_id,
+            "agents_executed": agents_executed,
+            "emergency_stop": emergency_stop,
+            "success": not emergency_stop,
+        },
     )
     append_audit_record(
         root,
@@ -113,12 +134,36 @@ def log_handoff_chain_complete(
     )
 
 
+def log_handoff_chain_failed(
+    root,
+    *,
+    deal_id: str,
+    client_id: str | None,
+    error: str,
+) -> None:
+    log_event(logger, "handoff_chain_failed", deal_id=deal_id, client_id=client_id, error=error)
+    append_audit_record(
+        root,
+        agent_id="orchestrator",
+        action="handoff_chain_failed",
+        reasoning=error,
+        metadata={"deal_id": deal_id, "client_id": client_id},
+    )
+    record_ops_event(
+        root,
+        "handoff_failed",
+        category="handoff",
+        data={"deal_id": deal_id, "error": error[:200]},
+    )
+
+
 def log_profile_saved(root, *, deal_id: str, agent_name: str, destination_cta: str | None) -> None:
-    logger.info(
-        "profile_saved deal_id=%s agent_name=%s destination_cta=%s",
-        deal_id,
-        agent_name,
-        destination_cta,
+    log_event(
+        logger,
+        "profile_saved",
+        deal_id=deal_id,
+        agent_name=agent_name,
+        destination_cta=destination_cta,
     )
     append_audit_record(
         root,
@@ -130,12 +175,7 @@ def log_profile_saved(root, *, deal_id: str, agent_name: str, destination_cta: s
 
 
 def log_deal_close(root, *, deal_id: str, close_type: str | None, cta_url: str | None) -> None:
-    logger.info(
-        "deal_close deal_id=%s close_type=%s cta_url=%s",
-        deal_id,
-        close_type,
-        cta_url,
-    )
+    log_event(logger, "deal_close", deal_id=deal_id, close_type=close_type, cta_url=cta_url)
     append_audit_record(
         root,
         agent_id="closer",

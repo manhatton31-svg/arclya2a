@@ -16,6 +16,16 @@ def test_agent_card_schema():
         schema = json.load(f)
     jsonschema.validate(card, schema)
     assert card["skills"]
+    assert card.get("platform", {}).get("pricing_model") == "success_based"
+    assert card.get("documentation")
+    assert card.get("endpoints", {}).get("handoff_chain")
+    assert "crypto_payments" in card.get("platform", {}).get("features", [])
+    assert card.get("endpoints", {}).get("crypto_intent")
+    assert card.get("endpoints", {}).get("crypto_submit")
+    doc_rels = {d.get("rel") for d in card.get("documentation", [])}
+    assert "crypto-intent" in doc_rels
+    assert "crypto-sales-guide" in doc_rels
+    assert "first-crypto-sale-runbook" in doc_rels
 
 
 def test_agent_card_endpoint():

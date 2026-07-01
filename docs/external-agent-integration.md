@@ -1,13 +1,17 @@
 # External Agent Integration Guide
 
-This document describes how an external agent connects to **Arclya A2A** over HTTP, authenticates safely, and drives the seller lifecycle: **onboarding → recruitment → close**.
+> **Start here:** [Partner Integration Guide](partner-integration-guide.md) — full lifecycle, success criteria, pricing, and response interpretation.
+
+This document is the **API reference** for connecting to **Arclya A2A** over HTTP: authentication, endpoints, error codes, and deployment.
 
 ## Quick start
 
-1. **Discover** — `GET /.well-known/agent-card.json` (no auth)
-2. **Authenticate** — send `X-Arclya-Key` or `Authorization: Bearer` on protected endpoints
-3. **Orchestrate** — `POST /orchestrate/handoff-chain` for each lifecycle phase
-4. **Read outcome** — check the `summary` block in the response
+1. **Discover** — `GET /` (landing) or `GET /.well-known/agent-card.json` (no auth)
+2. **Pre-validate** — `POST /onboarding/validate` with your `product_profile` (no auth)
+3. **Authenticate** — send `X-Arclya-Key` or `Authorization: Bearer` on protected endpoints
+4. **Orchestrate** — `POST /orchestrate/handoff-chain` for each lifecycle phase
+5. **Read outcome** — check the `summary` block in the response
+6. **Monitor** — `GET /health`, `GET /status`, `GET /ops/dashboard`
 
 ---
 
@@ -40,14 +44,18 @@ When `ARCLYA_API_KEY` is **not** set, authentication is disabled (local developm
 
 ### Public endpoints (no auth)
 
-- `GET /.well-known/agent-card.json`
-- `GET /health`
+- `GET /` — landing page
+- `GET /.well-known/agent-card.json` — A2A discovery
+- `GET /health`, `GET /status`, `GET /ops/dashboard`
+- `POST /onboarding/validate` — validate product profile
+- `GET /tools`
 
 ### Protected endpoints (auth when enabled)
 
 - `POST /orchestrate/handoff-chain`
 - `GET /orchestrate/route`
-- `POST /learning/campaign`
+- `POST /learning/campaign`, `POST /learning/run`
+- `GET /learning/patches`, `GET /billing/deals`
 - `GET /prompt/assembly/{agent_id}`
 
 ---

@@ -10,6 +10,11 @@ live (--live):
     Real xAI inference via chat completions API.
     Requires XAI_API_KEY in the environment (or .env if loaded by your shell).
 
+with-tools (--with-tools):
+    Demonstrate real connector tool execution after close (Linear task, Gmail, etc.).
+    Uses live credentials when set (LINEAR_API_KEY, GMAIL_ACCESS_TOKEN, …).
+    Falls back to ARCLYA_TOOL_DRY_RUN=1 when credentials are missing.
+
 Each phase runs the full constitutional chain for its entry agent:
     entry_agent → profit_guardrail → final_arbiter
 
@@ -34,8 +39,13 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from arclya2a.config.product_profile import build_destination_cta
+from arclya2a.learning.demo_analyzer import analyze_demo_report, emit_demo_learning_signal
+from arclya2a.learning.execution_analyzer import emit_execution_learning_signal
+from arclya2a.learning.prompt_updater import apply_learning_signal
 from arclya2a.orchestrator.engine import Orchestrator
 from arclya2a.orchestrator.router import resolve_flow_chain, route_entry_agent
+from arclya2a.tools.executor import any_tool_available, tools_status_label
+from arclya2a.tools.registry import ToolRegistry
 from arclya2a.xai.client import XAIClient
 
 # Constitutional tail appended by resolve_flow_chain for flow entry agents.
@@ -59,8 +69,71 @@ DEMO_PROFILE = {
 }
 
 
+_DEMO_WITH_TOOLS = False
+
+
+def _closer_tool_requests() -> list[dict[str, Any]]:
+    """Tool requests the closer issues after a successful close."""
+    cta = build_destination_cta(DEMO_PROFILE)
+    return [
+        {
+            "tool_id": "linear.create_followup_task",
+            "reason": "Deal closed — create follow-up task for partner routing",
+            "parameters": {
+                "title": f"Follow up: Lead routing — {DEMO_PROFILE['product_name']}",
+                "description": (
+                    f"Partner committed to warm leads. CTA: {cta}. "
+                    f"Deal: demo_seller_001. Pricing: success-based pay-on-close."
+                ),
+                "priority": 2,
+            },
+        },
+        {
+            "tool_id": "gmail.send_followup_email",
+            "reason": "Send written confirmation of routing commitment",
+            "parameters": {
+                "to": "partner-agent@example.com",
+                "subject": f"Lead routing confirmed — {DEMO_PROFILE['product_name']}",
+                "body": (
+                    f"Thank you for confirming warm lead routing to {cta}. "
+                    "Success-based / pay-on-close terms apply."
+                ),
+            },
+        },
+    ]
+
+
 def _mock_responses(agent_id: str) -> dict[str, Any]:
     """Deterministic LLM payloads for each agent in the demo flow."""
+    closer_body: dict[str, Any] = {
+        "status": "COMPLETE",
+        "next_action": "handoff_to_profit_guardrail",
+        "deal_closed": True,
+        "lead_routing_confirmed": True,
+        "close_type": "lead_routing_commitment",
+        "close_package": {
+            "product_name": DEMO_PROFILE["product_name"],
+            "cta_url": build_destination_cta(DEMO_PROFILE),
+            "pricing_frame": "Success-based / pay-on-close via tracked link",
+            "partner_obligations": "Route warm qualified leads matching target_customer to cta_url",
+            "seller_obligations": "Pay on verified conversion through tracked link only",
+            "lead_routing_confirmed": True,
+            "pricing_model": "success_based_pay_on_close",
+        },
+        "partner_agreement_summary": (
+            "Partner agent confirms they will send warm, qualified leads to the tracked CTA URL."
+        ),
+        "confidence": 0.91,
+        "validation": {"confidence": 91, "check": "Lead routing commitment secured"},
+        "preference_handshake": {"format": "json", "accepted": True},
+    }
+    if _DEMO_WITH_TOOLS:
+        closer_body["tool_reasoning"] = (
+            "Deal closed with explicit routing commitment. Creating Linear task for ops "
+            "follow-up and sending written confirmation to partner on file."
+        )
+        closer_body["tool_requests"] = _closer_tool_requests()
+
     responses: dict[str, dict[str, Any]] = {
         "onboarding_specialist": {
             "status": "COMPLETE",
@@ -98,28 +171,7 @@ def _mock_responses(agent_id: str) -> dict[str, Any]:
             "validation": {"confidence": 82, "check": "Partner qualified for warm-lead routing"},
             "preference_handshake": {"format": "json", "accepted": True},
         },
-        "closer": {
-            "status": "COMPLETE",
-            "next_action": "handoff_to_profit_guardrail",
-            "deal_closed": True,
-            "lead_routing_confirmed": True,
-            "close_type": "lead_routing_commitment",
-            "close_package": {
-                "product_name": DEMO_PROFILE["product_name"],
-                "cta_url": build_destination_cta(DEMO_PROFILE),
-                "pricing_frame": "Success-based / pay-on-close via tracked link",
-                "partner_obligations": "Route warm qualified leads matching target_customer to cta_url",
-                "seller_obligations": "Pay on verified conversion through tracked link only",
-                "lead_routing_confirmed": True,
-                "pricing_model": "success_based_pay_on_close",
-            },
-            "partner_agreement_summary": (
-                "Partner agent confirms they will send warm, qualified leads to the tracked CTA URL."
-            ),
-            "confidence": 0.91,
-            "validation": {"confidence": 91, "check": "Lead routing commitment secured"},
-            "preference_handshake": {"format": "json", "accepted": True},
-        },
+        "closer": closer_body,
         "profit_guardrail": {
             "status": "COMPLETE",
             "next_action": "handoff_to_final_arbiter",
@@ -236,6 +288,8 @@ def _phase_agent_summary(handoff_chain: list[dict[str, Any]]) -> list[dict[str, 
             row["deal_closed"] = payload.get("deal_closed")
             row["lead_routing_confirmed"] = payload.get("lead_routing_confirmed")
             row["cta_url"] = payload.get("close_package", {}).get("cta_url")
+            row["tools_executed"] = payload.get("tools_executed")
+            row["tool_results"] = payload.get("tool_results")
         if agent_id == "onboarding_specialist":
             row["onboarding_complete"] = payload.get("onboarding_complete")
         if agent_id == "recruiter":
@@ -382,6 +436,7 @@ def format_shareable_report(raw: dict[str, Any]) -> dict[str, Any]:
             "cta_url": closer.get("cta_url"),
             "lead_routing_confirmed": closer.get("lead_routing_confirmed"),
         },
+        "learning_suggestions": raw.get("learning_suggestions"),
     }
 
 
@@ -427,6 +482,43 @@ def _verify_guardrail_chain(
     return checks
 
 
+def _format_tool_action_summary(result: dict[str, Any]) -> str:
+    """Human-readable summary of what a tool did."""
+    tool_id = result.get("tool_id", "?")
+    data = result.get("data") or {}
+    if tool_id == "linear.create_followup_task":
+        ident = data.get("identifier") or data.get("issue_id", "")
+        return f"Created Linear issue {ident or '(pending)'}"
+    if tool_id == "gmail.send_followup_email":
+        return f"Sent email to {data.get('to', result.get('input_summary', {}).get('to', '?'))}"
+    if tool_id.startswith("calendar."):
+        link = data.get("meet_link") or data.get("html_link", "")
+        return f"Created calendar event{f' ({link})' if link else ''}"
+    if tool_id == "notion.create_deal_page":
+        return f"Created Notion page {data.get('title', '')}"
+    return data.get("message_id") or data.get("url") or "completed"
+
+
+def _print_tool_results(tool_results: list[dict[str, Any]], *, quiet: bool = False) -> None:
+    if quiet or not tool_results:
+        return
+    print("      ── Tool Executions ──")
+    for tr in tool_results:
+        outcome = tr.get("outcome", "?")
+        icon = {"success": "✓", "dry_run": "◎", "failed": "✗", "skipped": "⊘"}.get(outcome, "•")
+        action = _format_tool_action_summary(tr)
+        duration = tr.get("duration_ms", 0)
+        attempts = tr.get("attempts", 1)
+        print(f"        {icon} {tr.get('tool_id')}: {outcome} — {action}")
+        print(f"           reason: {tr.get('reason', '(none)')}")
+        if duration:
+            print(f"           duration: {duration:.1f}ms, attempts: {attempts}")
+        if tr.get("error_code"):
+            print(f"           error: [{tr['error_code']}] {tr.get('error', '')}")
+        if tr.get("audit_id"):
+            print(f"           audit_id: {tr['audit_id']}")
+
+
 def _summarize_handoff(handoff: dict[str, Any], *, quiet: bool = False) -> None:
     if quiet:
         return
@@ -447,6 +539,13 @@ def _summarize_handoff(handoff: dict[str, Any], *, quiet: bool = False) -> None:
         pkg = payload.get("close_package", {})
         print(f"      deal_closed={payload.get('deal_closed')}, close_type={payload.get('close_type')}")
         print(f"      cta_url={pkg.get('cta_url', '')}")
+        if payload.get("tool_reasoning"):
+            print(f"      tool_reasoning: {payload.get('tool_reasoning')}")
+        _print_tool_results(payload.get("tool_results") or [], quiet=quiet)
+        if payload.get("tool_results"):
+            ok = payload.get("tools_executed", 0)
+            fail = payload.get("tools_failed", 0)
+            print(f"      tools summary: {ok} succeeded, {fail} failed")
     if agent == "profit_guardrail":
         margin = payload.get("margin_check", {})
         print(f"      margin_approved={margin.get('approved')}, margin_pct={margin.get('margin_percent')}")
@@ -455,10 +554,76 @@ def _summarize_handoff(handoff: dict[str, Any], *, quiet: bool = False) -> None:
         print(f"      qc_passed={qc.get('passed')}")
 
 
-def run_demo(*, live: bool = False, quiet: bool = False) -> dict[str, Any]:
+def _configure_tools_mode(with_tools: bool) -> dict[str, Any]:
+    """Enable tool demo; set dry-run when credentials are absent."""
+    global _DEMO_WITH_TOOLS
+    _DEMO_WITH_TOOLS = with_tools
+    info: dict[str, Any] = {"enabled": with_tools}
+    if not with_tools:
+        return info
+
+    registry = ToolRegistry(ROOT)
+    info["status"] = tools_status_label(ROOT, "closer")
+    info["catalog"] = registry.catalog_for_agent("closer")
+    if not any_tool_available(ROOT, "closer"):
+        os.environ.setdefault("ARCLYA_TOOL_DRY_RUN", "1")
+        info["dry_run"] = True
+        info["status"] = "dry-run (no credentials; set LINEAR_API_KEY etc. for live)"
+    else:
+        info["dry_run"] = False
+    return info
+
+
+def _emit_learning_from_demo(report: dict[str, Any], shareable: dict[str, Any], *, emit_learning: bool) -> dict[str, Any]:
+    """Emit execution + demo learning signals and generate prompt patches."""
+    if not emit_learning:
+        return {"emitted": False}
+
+    exec_signal = emit_execution_learning_signal(ROOT, shareable)
+    demo_signal = emit_demo_learning_signal(ROOT, shareable) if report.get("success") else None
+    merged = {
+        "improvement_signal": {
+            **exec_signal,
+            "recommendations": list(dict.fromkeys(
+                exec_signal.get("recommendations", [])
+                + (demo_signal or {}).get("recommendations", [])
+            )),
+            "issues_detected": list(dict.fromkeys(
+                exec_signal.get("issues_detected", [])
+                + (demo_signal or {}).get("issues_detected", [])
+            )),
+        }
+    }
+    patch_result = apply_learning_signal(ROOT, merged, auto_apply=False)
+    return {
+        "emitted": True,
+        "execution_signal": exec_signal,
+        "demo_signal": demo_signal,
+        "patches_created": patch_result.get("patches_created", 0),
+        "patches_applied": patch_result.get("patches_applied", 0),
+        "pending_review": patch_result.get("pending_review", 0),
+        "auto_applied": patch_result.get("auto_applied", []),
+        "patch_ids": patch_result.get("patch_ids", []),
+    }
+
+
+def run_demo(
+    *,
+    live: bool = False,
+    quiet: bool = False,
+    with_tools: bool = False,
+    emit_learning: bool = False,
+) -> dict[str, Any]:
+    tool_info = _configure_tools_mode(with_tools)
     client = build_live_xai_client() if live else build_mock_xai_client()
     orchestrator = Orchestrator(ROOT, xai_client=client)
-    report: dict[str, Any] = {"mode": "live" if live else "mock", "phases": [], "success": True}
+    report: dict[str, Any] = {
+        "mode": "live" if live else "mock",
+        "phases": [],
+        "success": True,
+        "tools": tool_info,
+        "emit_learning": emit_learning,
+    }
 
     # Phase 1 — New seller agent connects → onboarding
     _banner("Phase 1: New seller agent → Onboarding Specialist", quiet=quiet)
@@ -555,6 +720,8 @@ def run_demo(*, live: bool = False, quiet: bool = False) -> dict[str, Any]:
         "lead_routing_confirmed": closer_payload.get("lead_routing_confirmed"),
         "close_type": closer_payload.get("close_type"),
         "cta_url": closer_payload.get("close_package", {}).get("cta_url"),
+        "tools_executed": closer_payload.get("tools_executed"),
+        "tool_results": closer_payload.get("tool_results"),
         **guardrail_checks,
     })
 
@@ -569,6 +736,12 @@ def run_demo(*, live: bool = False, quiet: bool = False) -> dict[str, Any]:
         print(f"  Deal closed: {report['phases'][2].get('deal_closed')}")
         print(f"  Lead routing confirmed: {report['phases'][2].get('lead_routing_confirmed')}")
         print(f"  CTA URL: {report['phases'][2].get('cta_url')}")
+        if with_tools:
+            print(f"  Tools: {tool_info.get('status')}")
+            closer_tools = report["phases"][2].get("tool_results") or []
+            _print_tool_results(closer_tools, quiet=False)
+            print(f"  Tools executed: {report['phases'][2].get('tools_executed', 0)}")
+            print(f"  View log: GET /tools/executions (or data/tool_executions/tool_executions.jsonl)")
 
     report["success"] = (
         report["phases"][0].get("entry_agent") == "onboarding_specialist"
@@ -580,6 +753,51 @@ def run_demo(*, live: bool = False, quiet: bool = False) -> dict[str, Any]:
         and all(p.get("guardrails_ok") for p in report["phases"])
     )
     report["uses_xai_inference"] = live
+
+    shareable_preview = {
+        "executive_summary": {
+            "onboarding_complete": report["phases"][0].get("onboarding_complete"),
+            "partner_qualified": report["phases"][1].get("acquisition_stage"),
+            "deal_closed": report["phases"][2].get("deal_closed"),
+            "lead_routing_confirmed": report["phases"][2].get("lead_routing_confirmed"),
+            "cta_url": report["phases"][2].get("cta_url"),
+            "all_guardrails_passed": all(p.get("guardrails_ok") for p in report["phases"]),
+            "tools_executed": report["phases"][2].get("tools_executed"),
+        },
+        "phases": report["phases"],
+        "tools": report.get("tools"),
+        "guardrails": {
+            "phases_verified": all(p.get("guardrails_ok") for p in report["phases"]),
+            "per_phase": [
+                {
+                    "phase": p.get("name"),
+                    "chain_matches_expected": p.get("chain_matches_expected"),
+                }
+                for p in report["phases"]
+            ],
+        },
+        "outcome": {
+            "success": report["success"],
+            "close_type": report["phases"][2].get("close_type"),
+            "cta_url": report["phases"][2].get("cta_url"),
+            "lead_routing_confirmed": report["phases"][2].get("lead_routing_confirmed"),
+        },
+        "success": report["success"],
+    }
+    report["learning_suggestions"] = analyze_demo_report(shareable_preview)
+    if emit_learning or (with_tools and report["success"]):
+        report["learning"] = _emit_learning_from_demo(report, shareable_preview, emit_learning=True)
+        if not quiet:
+            learning = report["learning"]
+            print(f"  Learning signals emitted: {learning.get('emitted')}")
+            print(f"  Patches created: {learning.get('patches_created', 0)}")
+            print(f"  Auto-applied (low-risk): {learning.get('patches_applied', 0)}")
+            print(f"  Pending review: {learning.get('pending_review', 0)}")
+            if learning.get("patch_ids"):
+                print(f"  Dashboard: python scripts/apply_prompt_patches.py --dashboard")
+    elif report["success"]:
+        emit_demo_learning_signal(ROOT, shareable_preview)
+
     return report
 
 
@@ -595,10 +813,25 @@ def main() -> None:
         action="store_true",
         help="Print JSON report to stdout after the demo",
     )
+    parser.add_argument(
+        "--with-tools",
+        action="store_true",
+        help="Demonstrate Closer tool actions (Linear task, Gmail follow-up) after close",
+    )
+    parser.add_argument(
+        "--emit-learning",
+        action="store_true",
+        help="Emit execution learning signals and generate prompt patches after demo",
+    )
     args = parser.parse_args()
 
     try:
-        report = run_demo(live=args.live, quiet=args.json)
+        report = run_demo(
+            live=args.live,
+            quiet=args.json,
+            with_tools=args.with_tools,
+            emit_learning=args.emit_learning or args.with_tools,
+        )
     except EnvironmentError as exc:
         print(f"ERROR: xAI configuration failed: {exc}", file=sys.stderr)
         raise SystemExit(2) from exc

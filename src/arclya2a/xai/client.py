@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import httpx
+
+from arclya2a.settings import get_settings
 
 
 CACHEABLE_START = "<!-- CACHEABLE_START -->"
@@ -48,7 +49,9 @@ def assemble_prompt(
     dynamic_template = _extract_section(text, DYNAMIC_START, DYNAMIC_END)
     dynamic = dynamic_template
     for key, value in variables.items():
-        dynamic = dynamic.replace(f"{{{{{key}}}}}", value)
+        placeholder = f"{{{{{key}}}}}"
+        cacheable = cacheable.replace(placeholder, value)
+        dynamic = dynamic.replace(placeholder, value)
 
     full = f"{cacheable}\n\n---\n\n{dynamic}"
     return PromptAssembly(
@@ -73,7 +76,7 @@ class XAIClient:
 
     def __init__(self, root: Path, api_key: str | None = None):
         self.root = root
-        self.api_key = api_key or os.environ.get("XAI_API_KEY")
+        self.api_key = api_key or get_settings().xai_api_key
         with open(root / "config" / "core.json", encoding="utf-8") as f:
             self.core_config = json.load(f)
         self.base_url = self.core_config["xai"]["base_url"]

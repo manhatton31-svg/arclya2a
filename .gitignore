@@ -13,6 +13,9 @@ venv/
 # Runtime / local dev artifacts
 data/audit/
 data/cost_tracking/
+data/closed_deals/*.jsonl
+data/payments/*.jsonl
+learning/demo_outcomes.jsonl
 learning/applied_patches.jsonl
 learning/learning_signals.jsonl
 learning/prompt_patches/

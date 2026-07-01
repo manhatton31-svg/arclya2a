@@ -63,6 +63,9 @@ def _mock_xai_response(agent_id: str) -> dict:
         "closer": {
             "status": "COMPLETE",
             "next_action": "handoff_to_profit_guardrail",
+            "deal_closed": True,
+            "lead_routing_confirmed": True,
+            "close_type": "lead_routing_commitment",
             "close_package": {
                 "subject": "Confirm lead routing partnership",
                 "body": "Pay-on-close terms; route leads to tracked URL",
@@ -79,10 +82,24 @@ def _mock_xai_response(agent_id: str) -> dict:
         "recruiter": {
             "status": "COMPLETE",
             "next_action": "handoff_to_profit_guardrail",
+            "ready_to_send": True,
+            "outreach_message": {
+                "subject": "Prospect Agent × Test Product — warm lead routing (pay-on-close)",
+                "body": "Your outreach capability aligns with sellers we onboard. Test Product serves SaaS founders. Success-based — pay only on convert. Reply with your Agent Card URL for a sandbox dry-run.",
+                "cta_type": "sandbox_handoff",
+                "personalized_value_proposition": "Route warm SaaS founder leads to Test Product on pay-on-close terms.",
+            },
+            "send_instructions": {
+                "delivery": "a2a_handoff",
+                "target_url": "https://prospect.example",
+                "recommended_headers": ["X-Arclya-Key", "X-Arclya-Agent-Id"],
+                "follow_up": "On positive reply, handoff_to_closer",
+            },
             "recruitment_draft": {
                 "target_agent_id": "prospect_agent",
                 "subject": "Join Arclya A2A",
                 "body": "Agent-to-agent partnership invite",
+                "ready_to_send": True,
                 "value_props": ["Low marginal cost"],
                 "proposed_handoff_chain": ["closer"],
             },
@@ -94,6 +111,17 @@ def _mock_xai_response(agent_id: str) -> dict:
         agent_id,
         {"status": "COMPLETE", "next_action": "continue", "validation": {"confidence": 70, "check": "ok"}},
     )
+
+
+@pytest.fixture(autouse=True)
+def isolate_settings_from_dotenv(monkeypatch):
+    """Prevent developer shell/.env from affecting test environment."""
+    from arclya2a.settings import reset_dotenv_state
+
+    reset_dotenv_state()
+    monkeypatch.setenv("ARCLYA_SKIP_DOTENV", "1")
+    monkeypatch.delenv("ARCLYA_API_KEY", raising=False)
+    monkeypatch.setenv("ARCLYA_SANDBOX_FORCE_DRY_RUN", "1")
 
 
 @pytest.fixture

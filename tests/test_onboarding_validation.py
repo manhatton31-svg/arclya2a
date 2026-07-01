@@ -26,6 +26,8 @@ def test_onboarding_rejects_incomplete_profile_claim(root):
     assert result["payload"]["onboarding_complete"] is False
     assert result["next_action"] == "continue_onboarding"
     assert result["ssot_updates"]["metadata"]["product_profile_complete"] is False
+    assert isinstance(result["payload"]["validation_errors"], list)
+    assert result["payload"]["validation_errors"][0].get("message")
 
 
 def test_onboarding_saves_complete_profile(root, tmp_path):

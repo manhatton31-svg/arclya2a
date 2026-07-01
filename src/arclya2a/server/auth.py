@@ -3,25 +3,23 @@
 from __future__ import annotations
 
 import hmac
-import os
+from pathlib import Path
 from typing import Any
 
 from fastapi import Request
 
+from arclya2a.partners.production_keys import lookup_production_key
+from arclya2a.partners.sandbox import lookup_sandbox_key
+from arclya2a.settings import get_settings
+
 
 def load_api_key() -> str | None:
-    """Load API key from environment. When unset, authentication is disabled."""
-    key = os.environ.get("ARCLYA_API_KEY", "").strip()
-    return key or None
+    """Load production API key from environment. When unset, authentication is disabled."""
+    return get_settings().arclya_api_key
 
 
 def load_rate_limit_per_minute() -> int:
-    raw = os.environ.get("ARCLYA_RATE_LIMIT_PER_MINUTE", "60").strip()
-    try:
-        value = int(raw)
-    except ValueError:
-        value = 60
-    return max(1, value)
+    return get_settings().rate_limit_per_minute
 
 
 def extract_api_key(request: Request) -> str | None:
@@ -42,38 +40,93 @@ def extract_caller_id(request: Request) -> str | None:
     return caller or None
 
 
-def verify_api_key(request: Request, configured_key: str | None) -> dict[str, Any] | None:
+def verify_api_key(
+    request: Request,
+    configured_key: str | None,
+    *,
+    root: Path | None = None,
+) -> dict[str, Any] | None:
     """
     Validate the request API key when authentication is enabled.
 
-    Returns caller context for logging. When auth is disabled, returns anonymous context.
+    Supports production key (ARCLYA_API_KEY) and sandbox keys (arclya_sandbox_*).
+    Returns caller context for logging. When auth is disabled, returns anonymous context
+    unless a valid sandbox key is provided.
     """
     caller_agent = extract_caller_id(request)
+    provided = extract_api_key(request)
+
+    if root and provided:
+        sandbox_entry = lookup_sandbox_key(root, provided)
+        if sandbox_entry:
+            return {
+                "authenticated": True,
+                "mode": "sandbox",
+                "client_id": caller_agent or f"sandbox:{sandbox_entry.get('partner_id')}",
+                "caller_agent": caller_agent,
+                "partner_id": sandbox_entry.get("partner_id"),
+                "agent_name": sandbox_entry.get("agent_name"),
+                "key_prefix": provided[:20] + "…",
+            }
+
+        production_entry = lookup_production_key(root, provided)
+        if production_entry:
+            return {
+                "authenticated": True,
+                "mode": "production",
+                "client_id": caller_agent or f"partner:{production_entry.get('partner_id')}",
+                "caller_agent": caller_agent,
+                "partner_id": production_entry.get("partner_id"),
+                "agent_name": production_entry.get("agent_name"),
+                "key_prefix": provided[:20] + "…",
+                "graduated": True,
+            }
+
     if not configured_key:
         client_id = caller_agent or request.client.host if request.client else "anonymous"
-        return {"authenticated": False, "client_id": client_id, "caller_agent": caller_agent}
+        return {
+            "authenticated": False,
+            "mode": "development",
+            "client_id": client_id,
+            "caller_agent": caller_agent,
+        }
 
-    provided = extract_api_key(request)
     if not provided or not hmac.compare_digest(provided, configured_key):
-        return None  # caller must treat None as auth failure
+        return None
 
-    # Log only a short non-reversible prefix — never the full secret.
     key_prefix = provided[:6] + "…" if len(provided) > 6 else "key"
     client_id = caller_agent or f"key:{key_prefix}"
     return {
         "authenticated": True,
+        "mode": "production",
         "client_id": client_id,
         "caller_agent": caller_agent,
         "key_prefix": key_prefix,
     }
 
 
-PUBLIC_PATHS = frozenset({"/health", "/.well-known/agent-card.json"})
+PUBLIC_PATHS = frozenset({
+    "/",
+    "/health",
+    "/status",
+    "/ops/dashboard",
+    "/onboarding/validate",
+    "/partners/sandbox/register",
+    "/partners/onboarding/guide",
+    "/partners/test",
+    "/.well-known/agent-card.json",
+    "/tools",
+    "/payments/crypto/networks",
+})
 
 PROTECTED_PREFIXES = (
     "/orchestrate/",
     "/learning/",
     "/prompt/",
+    "/billing/",
+    "/tools/executions",
+    "/security/",
+    "/partners/me/",
 )
 
 

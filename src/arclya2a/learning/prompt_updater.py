@@ -85,63 +85,80 @@ def rollback_prompt(root: Path, agent_id: str, version_id: str) -> dict[str, Any
     }
 
 
-def apply_learning_signal(root: Path, signal: dict[str, Any]) -> dict[str, Any]:
-    """Apply improvement signal: patch log, learned overlay, merged effective prompt."""
+def apply_learning_signal(
+    root: Path,
+    signal: dict[str, Any],
+    *,
+    auto_apply: bool = False,
+    auto_apply_low_risk: bool = True,
+) -> dict[str, Any]:
+    """Generate concrete patches; auto-apply low-risk when eligible."""
+    from arclya2a.learning.patch_generator import (
+        apply_patch_by_id,
+        auto_apply_eligible_patches,
+        generate_concrete_patches,
+        store_prompt_patches,
+    )
+    from arclya2a.security.cross_agent_isolation import filter_patches_by_isolation
+    from arclya2a.learning.patch_outcomes import evaluate_patch_outcomes
+
     improvement = signal.get("improvement_signal", signal)
     target = improvement.get("meta_optimizer_target", "prompts/outreach_worker.md")
     agent_id = Path(target).stem
     recommendations = improvement.get("recommendations", [])
 
-    version_id = snapshot_prompt_version(root, agent_id)
+    evaluate_patch_outcomes(
+        root,
+        improvement.get("issues_detected") or [],
+        signal=improvement,
+    )
 
-    patches_dir = root / "learning" / "prompt_patches"
-    patches_dir.mkdir(parents=True, exist_ok=True)
-    patch_file = patches_dir / f"{agent_id}.json"
-
-    existing: list[dict[str, Any]] = []
-    if patch_file.exists():
-        existing = json.loads(patch_file.read_text(encoding="utf-8"))
-
-    patch = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "campaign_id": signal.get("campaign_id"),
-        "recommendations": recommendations,
-        "deltas": improvement.get("deltas", {}),
-        "priority": improvement.get("priority", "medium"),
-        "snapshot_version": version_id,
-    }
-    existing.append(patch)
-    patch_file.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+    all_patches = generate_concrete_patches(improvement)
+    allowed_patches, blocked_patches = filter_patches_by_isolation(all_patches, improvement)
+    patch_ids = store_prompt_patches(root, allowed_patches + blocked_patches)
 
     learned_path = root / "prompts" / f"{agent_id}_learned.md"
     lines = [
         "<!-- DYNAMIC_LEARNED_START -->",
-        "## Learned Improvements (auto-applied)",
+        "## Learned Improvements (pending review)",
         *[f"- {r}" for r in recommendations],
         "<!-- DYNAMIC_LEARNED_END -->",
     ]
     learned_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    effective_path = merge_effective_prompt(root, agent_id, recommendations)
+    applied_ids: list[str] = []
+    auto_applied_results: list[dict[str, Any]] = []
 
-    applied_log = root / "learning" / "applied_patches.jsonl"
-    entry = {
-        "timestamp": patch["timestamp"],
-        "agent_id": agent_id,
-        "target": target,
-        "recommendations_count": len(recommendations),
-        "patch_index": len(existing) - 1,
-        "snapshot_version": version_id,
-        "effective_path": str(effective_path.relative_to(root)),
-    }
-    with open(applied_log, "a", encoding="utf-8") as f:
-        f.write(json.dumps(entry) + "\n")
+    if auto_apply:
+        for pid in patch_ids:
+            try:
+                apply_patch_by_id(root, pid)
+                applied_ids.append(pid)
+            except FileNotFoundError:
+                pass
+    elif auto_apply_low_risk:
+        allowed_ids = [p["patch_id"] for p in allowed_patches]
+        auto_applied_results = auto_apply_eligible_patches(root, allowed_ids)
+        applied_ids = [r["patch_id"] for r in auto_applied_results if r.get("applied")]
+
+    effective_path = root / "prompts" / f"{agent_id}_effective.md"
+    if applied_ids:
+        merge_effective_prompt(root, agent_id, recommendations)
+    elif recommendations and not effective_path.exists():
+        merge_effective_prompt(root, agent_id, recommendations)
 
     return {
         "agent_id": agent_id,
         "target": target,
-        "patches_applied": len(existing),
+        "patches_created": len(patch_ids),
+        "patch_ids": patch_ids,
+        "patches_applied": len(applied_ids),
+        "auto_applied": auto_applied_results,
+        "auto_apply": auto_apply,
+        "auto_apply_low_risk": auto_apply_low_risk,
         "learned_file": str(learned_path.relative_to(root)),
-        "effective_file": str(effective_path.relative_to(root)),
-        "snapshot_version": version_id,
+        "effective_file": str(effective_path.relative_to(root)) if effective_path.exists() else None,
+        "pending_review": len(allowed_patches) - len(applied_ids),
+        "isolation_blocked": len(blocked_patches),
+        "isolation_blocked_ids": [p.get("patch_id") for p in blocked_patches],
     }

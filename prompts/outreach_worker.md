@@ -39,3 +39,6 @@ Draft only. No pricing, no QC, no external send.
 ## Learned Context
 {{learned_context}}
 <!-- DYNAMIC_END -->
+
+## Reinforcement (auto-generated)
+- Use shorter subject lines

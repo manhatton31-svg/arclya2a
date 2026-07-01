@@ -42,16 +42,18 @@ def append_audit_record(
 
 
 def read_audit_records(root: Path, limit: int = 100) -> list[dict[str, Any]]:
-    """Read recent audit records."""
+    """Read recent audit records, newest first."""
     audit_dir = root / "data" / "audit"
     if not audit_dir.exists():
         return []
     records: list[dict[str, Any]] = []
     for path in sorted(audit_dir.glob("*.jsonl"), reverse=True):
+        file_rows: list[dict[str, Any]] = []
         with open(path, encoding="utf-8") as f:
             for line in f:
                 if line.strip():
-                    records.append(json.loads(line))
+                    file_rows.append(json.loads(line))
+        records.extend(reversed(file_rows))
         if len(records) >= limit:
             break
     return records[:limit]

@@ -20,6 +20,8 @@ from arclya2a.handoff.validators import (
     validate_structured_feedback,
 )
 from arclya2a.orchestrator.agent_runner import resolve_chain_from_registry, run_registry_agent
+from arclya2a.security.cross_agent_isolation import enrich_orchestrator_context
+from arclya2a.partners.sandbox import is_sandbox_active
 from arclya2a.orchestrator.router import resolve_flow_chain, route_entry_agent
 from arclya2a.xai.client import XAIClient
 
@@ -54,6 +56,53 @@ class Orchestrator:
         """Resolve chain dynamically from registry handoff_targets."""
         return resolve_chain_from_registry(self.agents, start_agent)
 
+    def _record_emergency_stop_security(
+        self,
+        handoff: dict[str, Any],
+        *,
+        context: dict[str, Any],
+        handoff_id: str,
+        ssot: dict[str, Any],
+    ) -> None:
+        """Log EMERGENCY_STOP when security-related flags are present."""
+        payload = handoff.get("payload") or {}
+        security_scan = payload.get("security_scan")
+        security_flags = payload.get("security_flags") or []
+        disqual = payload.get("disqualification_reason")
+        inference = handoff.get("inference") or {}
+        security_related = bool(
+            security_scan
+            or security_flags
+            or disqual in ("prompt_injection", "premature_tool_coercion", "suspicious_manipulation")
+            or inference.get("scan_blocked")
+        )
+        if not security_related:
+            return
+
+        from arclya2a.observability.security_events import (
+            EVENT_EMERGENCY_STOP_SECURITY,
+            record_security_event,
+        )
+
+        record_security_event(
+            self.root,
+            EVENT_EMERGENCY_STOP_SECURITY,
+            reason_code=handoff.get("next_action") or "emergency_stop",
+            severity="critical",
+            partner_id=context.get("partner_id"),
+            agent_id=handoff.get("agent_id"),
+            deal_id=ssot.get("deal_id"),
+            handoff_id=handoff_id,
+            sandbox_mode=bool(context.get("sandbox_mode")),
+            isolation_scope=context.get("isolation_scope"),
+            details={
+                "security_scan": security_scan,
+                "security_flags": security_flags,
+                "disqualification_reason": disqual,
+                "next_action": handoff.get("next_action"),
+            },
+        )
+
     def route(self, ssot: dict[str, Any], *, entry_agent: str | None = None) -> str:
         """Route to entry agent: new → onboarding, onboarded+warm → closer."""
         return route_entry_agent(ssot, explicit=entry_agent)
@@ -68,6 +117,8 @@ class Orchestrator:
         estimated_cost_usd: float = 5.0,
         entry_agent: str | None = None,
         auto_route: bool = True,
+        partner_id: str | None = None,
+        sandbox_mode: bool | None = None,
     ) -> OrchestrationResult:
         """Execute a multi-agent handoff chain via registry dispatch."""
         routed_entry: str | None = None
@@ -92,14 +143,23 @@ class Orchestrator:
                 raise HandoffValidationError(f"Unknown agent: {agent_id}")
 
             agent = self.agents[agent_id]
-            context = {
-                "task_context": task_context,
-                "handoff_id": handoff_id,
-                "previous_handoff": previous_handoff,
-                "revenue_usd": revenue_usd,
-                "estimated_cost_usd": estimated_cost_usd,
-                "memory_summary": build_memory_summary(ssot),
-            }
+            context = enrich_orchestrator_context(
+                {
+                    "task_context": task_context,
+                    "handoff_id": handoff_id,
+                    "previous_handoff": previous_handoff,
+                    "revenue_usd": revenue_usd,
+                    "estimated_cost_usd": estimated_cost_usd,
+                    "memory_summary": build_memory_summary(ssot),
+                },
+                ssot,
+                partner_id=partner_id or ssot.get("metadata", {}).get("partner_id"),
+                sandbox_mode=(
+                    sandbox_mode
+                    if sandbox_mode is not None
+                    else is_sandbox_active()
+                ),
+            )
 
             handoff = run_registry_agent(
                 agent, ssot, self.root, context, xai_client=self.xai_client
@@ -128,6 +188,10 @@ class Orchestrator:
                     "next_action": handoff.get("next_action"),
                     "model_tier": agent.get("model_tier"),
                     "inference": handoff.get("inference"),
+                    "partner_id": context.get("partner_id"),
+                    "isolation_scope": context.get("isolation_scope"),
+                    "sandbox_mode": context.get("sandbox_mode"),
+                    "deal_id": ssot.get("deal_id"),
                 },
             )
             audit_ids.append(audit["id"])
@@ -148,6 +212,12 @@ class Orchestrator:
                 cost_records.append(cost_record)
 
             if handoff["status"] == "EMERGENCY_STOP":
+                self._record_emergency_stop_security(
+                    handoff,
+                    context=context,
+                    handoff_id=handoff_id,
+                    ssot=ssot,
+                )
                 return OrchestrationResult(
                     handoff_chain=chain_results,
                     final_ssot=ssot,

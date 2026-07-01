@@ -1,0 +1,84 @@
+{
+  "version": "1.0.0",
+  "tools": [
+    {
+      "id": "gmail.send_followup_email",
+      "name": "Send Follow-up Email",
+      "description": "Send a professional follow-up email to the partner agent after negotiation or close.",
+      "connector": "gmail",
+      "action": "send_email",
+      "allowed_agents": ["closer", "recruiter", "outreach_worker"],
+      "required_env": ["GMAIL_ACCESS_TOKEN"],
+      "optional_env": ["GMAIL_SENDER"],
+      "parameters": {
+        "to": { "type": "string", "required": true, "description": "Recipient email address" },
+        "subject": { "type": "string", "required": true, "description": "Email subject line" },
+        "body": { "type": "string", "required": true, "description": "Plain-text email body" }
+      }
+    },
+    {
+      "id": "calendar.create_event",
+      "name": "Create Calendar Event",
+      "description": "Create a Google Calendar event for partner follow-up or onboarding call.",
+      "connector": "google_calendar",
+      "action": "create_event",
+      "allowed_agents": ["closer", "recruiter"],
+      "required_env": ["GOOGLE_CALENDAR_ACCESS_TOKEN"],
+      "optional_env": ["GOOGLE_CALENDAR_ID"],
+      "parameters": {
+        "title": { "type": "string", "required": true, "description": "Event title" },
+        "start_time": { "type": "string", "required": true, "description": "ISO-8601 start datetime" },
+        "end_time": { "type": "string", "required": false, "description": "ISO-8601 end datetime (defaults to +30min)" },
+        "attendees": { "type": "array", "required": false, "description": "List of attendee email addresses" },
+        "description": { "type": "string", "required": false, "description": "Event description" }
+      }
+    },
+    {
+      "id": "calendar.create_scheduling_link",
+      "name": "Create Scheduling Link",
+      "description": "Create a calendar event with Google Meet link for partner scheduling.",
+      "connector": "google_calendar",
+      "action": "create_scheduling_link",
+      "allowed_agents": ["closer", "recruiter"],
+      "required_env": ["GOOGLE_CALENDAR_ACCESS_TOKEN"],
+      "optional_env": ["GOOGLE_CALENDAR_ID"],
+      "parameters": {
+        "title": { "type": "string", "required": true, "description": "Meeting title" },
+        "start_time": { "type": "string", "required": true, "description": "ISO-8601 start datetime" },
+        "duration_minutes": { "type": "integer", "required": false, "description": "Meeting duration (default 30)" },
+        "attendees": { "type": "array", "required": false, "description": "Attendee email addresses" }
+      }
+    },
+    {
+      "id": "linear.create_followup_task",
+      "name": "Create Linear Follow-up Task",
+      "description": "Create a Linear issue when a deal is closed or needs follow-up.",
+      "connector": "linear",
+      "action": "create_issue",
+      "allowed_agents": ["closer", "recruiter"],
+      "required_env": ["LINEAR_API_KEY"],
+      "optional_env": ["LINEAR_TEAM_ID"],
+      "parameters": {
+        "title": { "type": "string", "required": true, "description": "Issue title" },
+        "description": { "type": "string", "required": false, "description": "Issue description (markdown)" },
+        "team_id": { "type": "string", "required": false, "description": "Linear team ID (falls back to LINEAR_TEAM_ID)" },
+        "priority": { "type": "integer", "required": false, "description": "1=urgent, 2=high, 3=medium, 4=low" }
+      }
+    },
+    {
+      "id": "notion.create_deal_page",
+      "name": "Create Notion Deal Page",
+      "description": "Log a closed deal or follow-up item as a Notion page.",
+      "connector": "notion",
+      "action": "create_page",
+      "allowed_agents": ["closer"],
+      "required_env": ["NOTION_API_KEY"],
+      "optional_env": ["NOTION_DATABASE_ID"],
+      "parameters": {
+        "title": { "type": "string", "required": true, "description": "Page title" },
+        "content": { "type": "string", "required": false, "description": "Page body text" },
+        "database_id": { "type": "string", "required": false, "description": "Notion database ID (falls back to NOTION_DATABASE_ID)" }
+      }
+    }
+  ]
+}

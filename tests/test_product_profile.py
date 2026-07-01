@@ -1,6 +1,8 @@
 from arclya2a.config.product_profile import (
     build_destination_cta,
+    format_validation_errors,
     validate_product_profile,
+    validation_summary,
 )
 
 
@@ -43,6 +45,17 @@ def test_validate_requires_three_objections():
     ok, missing = validate_product_profile(_full_profile(common_objections=["Only one"]))
     assert not ok
     assert any("common_objections" in m for m in missing)
+
+
+def test_format_validation_errors():
+    errors = format_validation_errors(["destination_link(invalid_url)", "agent_name"])
+    assert len(errors) == 2
+    assert all("field" in e and "message" in e for e in errors)
+
+
+def test_validation_summary():
+    summary = validation_summary(["agent_name", "destination_link(invalid_url)"])
+    assert "Fix before completing" in summary
 
 
 def test_build_destination_cta_with_affiliate():

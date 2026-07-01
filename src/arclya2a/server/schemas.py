@@ -101,3 +101,35 @@ class HandoffChainResponse(BaseModel):
     cost_records: list[dict[str, Any]] = Field(default_factory=list)
     emergency_stop: bool = False
     uses_xai_inference: bool = False
+    sandbox_mode: bool | None = None
+    test_marker: str | None = None
+    tools_mode: str | None = None
+
+
+class CryptoPaymentIntentRequest(BaseModel):
+    """Payload for POST /payments/crypto/intent."""
+
+    amount: float = Field(..., gt=0, le=1_000_000, description="USD amount to collect in USDC")
+    network: str | None = Field(
+        default=None,
+        description="base | ethereum | solana | bnb (defaults to server config)",
+    )
+    partner_id: str | None = Field(default=None, max_length=128)
+    deal_id: str | None = Field(default=None, max_length=128)
+    agent_id: str | None = Field(default=None, max_length=128)
+    customer_ref: str | None = Field(default=None, max_length=256)
+    memo: str | None = Field(default=None, max_length=256)
+
+
+class CryptoPaymentSubmitRequest(BaseModel):
+    """Payload for POST /payments/crypto/{payment_id}/submit."""
+
+    tx_hash: str = Field(..., min_length=8, max_length=256, description="On-chain transaction hash")
+    network: str | None = Field(default=None, description="Optional network confirmation")
+
+
+class CryptoPaymentConfirmRequest(BaseModel):
+    """Payload for operator POST /payments/crypto/{payment_id}/confirm."""
+
+    tx_hash: str | None = Field(default=None, max_length=256, description="Verified on-chain tx hash")
+    confirmed_by: str | None = Field(default=None, max_length=128, description="Operator identifier")

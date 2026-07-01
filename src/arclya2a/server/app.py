@@ -5,12 +5,22 @@ from __future__ import annotations
 import json
 import logging
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
+
+from arclya2a.config.product_profile import (
+    build_destination_cta,
+    format_validation_errors,
+    validate_product_profile,
+    validation_summary,
+)
+from arclya2a.server.agent_card import build_agent_card as build_agent_card_doc
+from arclya2a.server.landing import LANDING_HTML
 
 from arclya2a.handoff.validators import HandoffValidationError
 from arclya2a.orchestrator.engine import Orchestrator
@@ -20,17 +30,68 @@ from arclya2a.server.auth import (
     path_requires_auth,
     verify_api_key,
 )
+from arclya2a.server.operator_auth import load_operator_key, verify_operator_key
 from arclya2a.server.errors import json_error, unhandled_exception_handler
+from arclya2a.observability.dashboard import build_ops_dashboard
+from arclya2a.observability.ops_events import record_ops_event
+from arclya2a.observability.ops_status import build_ops_status
+from arclya2a.observability.structured_log import configure_logging, log_event
 from arclya2a.server.events import (
     _request_snapshot,
     build_handoff_summary,
     log_deal_close,
     log_handoff_chain_complete,
+    log_handoff_chain_failed,
     log_handoff_chain_start,
     log_handoff_request_received,
     log_profile_saved,
 )
+from arclya2a.partners.graduation import (
+    GraduationError,
+    assess_graduation_readiness,
+    graduate_partner,
+    resolve_partner_identifier,
+)
+from arclya2a.partners.onboarding_guide import build_onboarding_guide
+from arclya2a.partners.progress import (
+    SUCCESS_DEFINITION,
+    build_partner_funnel_metrics,
+    build_partner_progress,
+    recommend_next_step,
+)
+from arclya2a.partners.sandbox import (
+    apply_sandbox_markers,
+    check_registration_allowed,
+    is_sandbox_path_blocked,
+    log_registration_attempt,
+    log_sandbox_audit,
+    record_sandbox_security_event,
+    register_sandbox_key,
+    sandbox_rate_limit,
+    set_sandbox_active,
+    validate_agent_card_url,
+    validate_agent_name,
+)
+from arclya2a.partners.test_registry import (
+    list_test_partners,
+    record_partner_activity,
+    register_test_partner,
+)
 from arclya2a.server.rate_limit import RateLimiter
+from arclya2a.billing.tracker import billing_summary, list_closed_deals
+from arclya2a.tools.observability import execution_summary, list_tool_executions
+from arclya2a.tools.registry import ToolRegistry
+from arclya2a.learning.demo_analyzer import emit_demo_learning_signal, load_latest_demo_signal
+from arclya2a.learning.execution_analyzer import emit_execution_learning_signal
+from arclya2a.learning.patch_generator import apply_patch_by_id, list_patches
+from arclya2a.learning.learning_scheduler import (
+    BackgroundLearningScheduler,
+    run_learning_cycle,
+    scheduler_enabled,
+    should_run_learning,
+)
+from arclya2a.learning.patch_outcomes import build_dashboard, list_learning_runs
+from arclya2a.server.crypto_checkout import register_crypto_checkout_routes
 from arclya2a.server.schemas import HandoffChainRequest, HandoffChainResponse, HandoffChainSummary
 from arclya2a.xai.client import XAIClient
 from arclya2a.xai.prompt_helpers import assemble_agent_prompt, assembly_to_response
@@ -47,59 +108,35 @@ def load_core_config() -> dict[str, Any]:
 
 def resolve_public_base_url() -> str:
     """Public URL for Agent Card discovery (Render, explicit override, or local config)."""
-    for key in ("ARCLYA_PUBLIC_URL", "RENDER_EXTERNAL_URL"):
-        value = os.environ.get(key, "").strip()
-        if value:
-            return value.rstrip("/")
-    return load_core_config()["server"]["base_url"].rstrip("/")
+    from arclya2a.settings import get_settings
+
+    settings = get_settings()
+    resolved = settings.resolved_public_url(
+        fallback=load_core_config()["server"]["base_url"],
+    )
+    return resolved or load_core_config()["server"]["base_url"].rstrip("/")
 
 
 def resolve_server_bind() -> tuple[str, int]:
     """Host/port for uvicorn; Render sets PORT and requires 0.0.0.0."""
+    from arclya2a.settings import get_settings
+
     core = load_core_config()
-    port_env = os.environ.get("PORT", "").strip()
-    if port_env:
-        return "0.0.0.0", int(port_env)
+    settings = get_settings()
+    if settings.port is not None:
+        return "0.0.0.0", settings.port
     return core["server"]["host"], int(core["server"]["port"])
 
 
 def build_agent_card() -> dict[str, Any]:
     """Build A2A-compliant AgentCard."""
     core = load_core_config()
-    base_url = resolve_public_base_url()
-    with open(ROOT / "agents" / "registry.json", encoding="utf-8") as f:
-        registry = json.load(f)
-
-    skills = [
-        {
-            "id": a["id"],
-            "name": a["name"],
-            "description": a["role_card"],
-            "tags": a.get("capabilities", []),
-        }
-        for a in registry["agents"]
-    ]
-
-    return {
-        "name": core["platform_name"],
-        "description": "Constitutional agent-to-agent platform for affordable, customizable outreach and AI closing workflows.",
-        "url": base_url,
-        "version": core["version"],
-        "capabilities": {
-            "streaming": False,
-            "pushNotifications": False,
-            "stateTransitionHistory": True,
-        },
-        "defaultInputModes": ["application/json", "text/plain"],
-        "defaultOutputModes": ["application/json"],
-        "skills": skills,
-        "authentication": {
-            "type": "apiKey",
-            "in": "header",
-            "name": "X-Arclya-Key",
-            "alternate": "Authorization: Bearer <ARCLYA_API_KEY>",
-        },
-    }
+    return build_agent_card_doc(
+        root=ROOT,
+        base_url=resolve_public_base_url(),
+        version=core["version"],
+        platform_name=core["platform_name"],
+    )
 
 
 def build_initial_ssot(req: HandoffChainRequest) -> dict[str, Any]:
@@ -193,6 +230,35 @@ def _register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(Exception, unhandled_exception_handler)
 
 
+def _sandbox_handoff_hints(summary: dict[str, Any]) -> list[str]:
+    """Contextual next-action hints after a sandbox handoff."""
+    hints: list[str] = []
+    if summary.get("emergency_stop"):
+        hints.append(
+            "EMERGENCY_STOP triggered — review task_context for injection patterns; "
+            "this blocks graduation (no_emergency_stops milestone)."
+        )
+        return hints
+    if not summary.get("profile_saved") and not summary.get("onboarding_complete"):
+        hints.append(
+            "Onboarding incomplete — include a complete product_profile in SSOT metadata "
+            "or run POST /onboarding/validate first."
+        )
+    elif summary.get("profile_saved") and not summary.get("lead_routing_confirmed"):
+        hints.append(
+            "Profile saved. Next: recruitment handoff (acquisition_stage: prospect), "
+            "then warm close (lead_warmth: warm) for lead_routing_confirmed."
+        )
+    if summary.get("lead_routing_confirmed"):
+        hints.append(
+            f"Sandbox close achieved — CTA: {summary.get('cta_url') or 'see summary.cta_url'}. "
+            "Check GET /partners/me/progress for remaining graduation milestones."
+        )
+    if not hints:
+        hints.append("Check GET /partners/me/progress for milestone status and next step.")
+    return hints
+
+
 def create_app(
     root: Path | None = None,
     xai_client: XAIClient | None = None,
@@ -204,57 +270,126 @@ def create_app(
     configured_key = api_key if api_key is not None else load_api_key()
     limit = rate_limit_per_minute if rate_limit_per_minute is not None else load_rate_limit_per_minute()
 
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        configure_logging()
+        log_event(logger, "server_startup", service="arclya2a", root=str(root))
+        record_ops_event(root, "server_startup", category="server", data={"root": str(root)})
+        scheduler = BackgroundLearningScheduler(root)
+        app.state.learning_scheduler = scheduler
+        await scheduler.start()
+        yield
+        log_event(logger, "server_shutdown", service="arclya2a")
+        record_ops_event(root, "server_shutdown", category="server", data={})
+        await scheduler.stop()
+
     app = FastAPI(
         title="Arclya A2A",
         version="0.1.0",
         description="Constitutional agent-to-agent orchestration API",
+        lifespan=lifespan,
     )
     app.state.root = root
     app.state.xai_client = xai_client
     app.state.api_key = configured_key
     app.state.rate_limiter = RateLimiter(max_per_minute=limit)
+    app.state.sandbox_rate_limiter = RateLimiter(max_per_minute=sandbox_rate_limit())
     _register_exception_handlers(app)
 
-    if not logging.getLogger().handlers:
-        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
+    configure_logging()
 
     @app.middleware("http")
     async def security_middleware(request: Request, call_next):
-        if not path_requires_auth(request.url.path):
-            return await call_next(request)
+        sandbox_mode = False
+        if path_requires_auth(request.url.path):
+            caller = verify_api_key(request, app.state.api_key, root=app.state.root)
+            if caller is None:
+                return json_error(
+                    code="authentication_error",
+                    message="Invalid or missing API key",
+                    status_code=401,
+                )
+            request.state.caller = caller
+            sandbox_mode = caller.get("mode") == "sandbox"
 
-        caller = verify_api_key(request, app.state.api_key)
-        if caller is None:
-            return json_error(
-                code="authentication_error",
-                message="Invalid or missing API key",
-                status_code=401,
-            )
-        request.state.caller = caller
+            if sandbox_mode and is_sandbox_path_blocked(request.url.path):
+                partner_id = caller.get("partner_id")
+                record_sandbox_security_event(
+                    app.state.root,
+                    "blocked_path",
+                    partner_id=partner_id,
+                    client_ip=request.client.host if request.client else None,
+                    path=request.url.path,
+                    details={"method": request.method},
+                )
+                log_sandbox_audit(
+                    app.state.root,
+                    action="sandbox_path_denied",
+                    reasoning=f"Sandbox key blocked from {request.url.path}",
+                    partner_id=partner_id,
+                    metadata={"path": request.url.path, "method": request.method},
+                )
+                return json_error(
+                    code="sandbox_forbidden",
+                    message="This endpoint is not available in sandbox mode",
+                    status_code=403,
+                )
 
-        client_id = caller.get("client_id", "anonymous")
-        allowed, remaining, retry_after = app.state.rate_limiter.check(client_id)
-        if not allowed:
-            logger.warning(
-                "rate_limit_exceeded client_id=%s path=%s retry_after=%s",
-                client_id,
-                request.url.path,
-                retry_after,
+            client_id = caller.get("client_id", "anonymous")
+            rate_limiter = (
+                app.state.sandbox_rate_limiter if sandbox_mode else app.state.rate_limiter
             )
-            response = json_error(
-                code="rate_limit_exceeded",
-                message="Rate limit exceeded. Retry later.",
-                details={"retry_after_seconds": retry_after, "limit_per_minute": limit},
-                status_code=429,
-            )
-            response.headers["Retry-After"] = str(retry_after)
-            response.headers["X-RateLimit-Remaining"] = "0"
+            rate_cap = sandbox_rate_limit() if sandbox_mode else limit
+            allowed, remaining, retry_after = rate_limiter.check(client_id)
+            if not allowed:
+                logger.warning(
+                    "rate_limit_exceeded client_id=%s path=%s retry_after=%s",
+                    client_id,
+                    request.url.path,
+                    retry_after,
+                )
+                if sandbox_mode and caller.get("partner_id"):
+                    record_sandbox_security_event(
+                        app.state.root,
+                        "rate_limit_exceeded",
+                        partner_id=caller.get("partner_id"),
+                        client_ip=request.client.host if request.client else None,
+                        path=request.url.path,
+                    )
+                response = json_error(
+                    code="rate_limit_exceeded",
+                    message="Rate limit exceeded. Retry later.",
+                    details={"retry_after_seconds": retry_after, "limit_per_minute": rate_cap},
+                    status_code=429,
+                )
+                response.headers["Retry-After"] = str(retry_after)
+                response.headers["X-RateLimit-Remaining"] = "0"
+                return response
+
+            set_sandbox_active(sandbox_mode)
+            try:
+                response = await call_next(request)
+            finally:
+                set_sandbox_active(False)
+
+            response.headers["X-RateLimit-Remaining"] = str(remaining)
+            response.headers["X-RateLimit-Limit"] = str(rate_cap)
+            if sandbox_mode:
+                response.headers["X-Arclya-Mode"] = "sandbox"
             return response
 
-        response = await call_next(request)
-        response.headers["X-RateLimit-Remaining"] = str(remaining)
-        response.headers["X-RateLimit-Limit"] = str(limit)
-        return response
+        caller = verify_api_key(request, app.state.api_key, root=app.state.root)
+        if caller and caller.get("mode") == "sandbox":
+            request.state.caller = caller
+            set_sandbox_active(True)
+            try:
+                response = await call_next(request)
+            finally:
+                set_sandbox_active(False)
+            response.headers["X-Arclya-Mode"] = "sandbox"
+            return response
+
+        return await call_next(request)
 
     def _orchestrator() -> Orchestrator:
         client = app.state.xai_client
@@ -265,18 +400,383 @@ def create_app(
     def _caller_context(request: Request) -> dict[str, Any]:
         return getattr(request.state, "caller", {"authenticated": False, "client_id": "anonymous"})
 
+    @app.get("/", response_class=HTMLResponse)
+    async def landing_page() -> str:
+        """Public landing page for partner agent discovery."""
+        return LANDING_HTML
+
     @app.get("/.well-known/agent-card.json")
     async def agent_card() -> JSONResponse:
         card = build_agent_card()
         return JSONResponse(content=card)
 
-    @app.get("/health")
-    async def health() -> dict[str, Any]:
+    @app.post("/partners/sandbox/register")
+    async def sandbox_register(request: Request) -> dict[str, Any]:
+        """Self-service sandbox API key for test partners (no auth required)."""
+        client_ip = request.client.host if request.client else None
+        try:
+            body = await request.json()
+        except Exception:
+            log_registration_attempt(
+                app.state.root,
+                agent_name="",
+                client_ip=client_ip,
+                success=False,
+                reason="invalid_json",
+            )
+            return json_error(
+                code="validation_error",
+                message="Request body must be valid JSON",
+                status_code=422,
+            )
+        agent_name = (body.get("agent_name") or "").strip()
+        agent_card_url = (body.get("agent_card_url") or "").strip() or None
+
+        name_ok, name_err = validate_agent_name(agent_name)
+        if not name_ok:
+            log_registration_attempt(
+                app.state.root,
+                agent_name=agent_name,
+                client_ip=client_ip,
+                success=False,
+                reason=name_err,
+            )
+            return json_error(code="validation_error", message=name_err, status_code=422)
+
+        url_ok, url_err = validate_agent_card_url(agent_card_url)
+        if not url_ok:
+            log_registration_attempt(
+                app.state.root,
+                agent_name=agent_name,
+                client_ip=client_ip,
+                success=False,
+                reason=url_err,
+            )
+            return json_error(code="validation_error", message=url_err, status_code=422)
+
+        allowed, deny_reason = check_registration_allowed(
+            app.state.root,
+            agent_name=agent_name,
+            client_ip=client_ip,
+        )
+        if not allowed:
+            log_registration_attempt(
+                app.state.root,
+                agent_name=agent_name,
+                client_ip=client_ip,
+                success=False,
+                reason=deny_reason,
+            )
+            record_sandbox_security_event(
+                app.state.root,
+                "registration_denied",
+                client_ip=client_ip,
+                details={"agent_name": agent_name, "reason": deny_reason},
+            )
+            return json_error(
+                code="registration_denied",
+                message=deny_reason or "Sandbox registration not allowed",
+                status_code=429,
+            )
+
+        partner = register_test_partner(
+            app.state.root,
+            agent_name=agent_name,
+            agent_card_url=agent_card_url,
+            target_customer=body.get("target_customer"),
+            contact=body.get("contact"),
+        )
+        sandbox_key = register_sandbox_key(
+            app.state.root,
+            partner_id=partner["partner_id"],
+            agent_name=agent_name,
+            metadata={
+                "agent_card_url": agent_card_url,
+                "target_customer": body.get("target_customer"),
+            },
+        )
+        log_registration_attempt(
+            app.state.root,
+            agent_name=agent_name,
+            client_ip=client_ip,
+            success=True,
+            partner_id=partner["partner_id"],
+        )
+        log_sandbox_audit(
+            app.state.root,
+            action="sandbox_registered",
+            reasoning=f"Sandbox key issued for {agent_name}",
+            partner_id=partner["partner_id"],
+            metadata={"client_ip": client_ip, "agent_card_url": agent_card_url},
+        )
+        record_sandbox_security_event(
+            app.state.root,
+            "registered",
+            partner_id=partner["partner_id"],
+            client_ip=client_ip,
+            details={"agent_name": agent_name},
+        )
+        guide = build_onboarding_guide()
         return {
-            "status": "healthy",
+            "partner_id": partner["partner_id"],
+            "sandbox_key": sandbox_key,
+            "mode": "sandbox",
+            "rate_limit_per_minute": sandbox_rate_limit(),
+            "tools_mode": "dry_run",
+            "billing": "disabled",
+            "test_marker": "[SANDBOX — dry-run tools, no production billing]",
+            "next_steps": guide["steps"][:3],
+            "guide_url": "/partners/onboarding/guide",
+            "message": "Use X-Arclya-Key header with sandbox_key on protected endpoints.",
+        }
+
+    @app.get("/partners/onboarding/guide")
+    async def partners_onboarding_guide() -> dict[str, Any]:
+        """Guided JSON flow for test partner onboarding."""
+        return build_onboarding_guide()
+
+    @app.get("/partners/test")
+    async def partners_test_list() -> dict[str, Any]:
+        """List registered test partners (no API keys exposed)."""
+        partners = list_test_partners(app.state.root)
+        guide = build_onboarding_guide()
+        funnel = build_partner_funnel_metrics(app.state.root)
+        return {
+            "count": len(partners),
+            "partners": partners,
+            "funnel": {
+                "stages": funnel.get("funnel_stages", []),
+                "conversion_rates": funnel.get("conversion_rates", {}),
+                "active_7d": funnel.get("active_7d", 0),
+            },
+            "graduation_criteria": guide["graduation_criteria"],
+            "security_graduation_criteria": guide["security_graduation_criteria"],
+            "success_definition": SUCCESS_DEFINITION,
+        }
+
+    @app.get("/partners/me/progress")
+    async def partners_me_progress(request: Request) -> dict[str, Any]:
+        """Sandbox partner journey progress (requires X-Arclya-Key sandbox key)."""
+        caller = _caller_context(request)
+        if caller.get("mode") != "sandbox" or not caller.get("partner_id"):
+            return json_error(
+                code="authentication_error",
+                message="Sandbox API key required. Register at POST /partners/sandbox/register.",
+                status_code=401,
+            )
+        progress = build_partner_progress(app.state.root, caller["partner_id"])
+        if not progress:
+            return json_error(
+                code="not_found",
+                message="Partner record not found",
+                status_code=404,
+            )
+        return apply_sandbox_markers(progress, sandbox=True)
+
+    @app.post("/partners/graduate")
+    async def partners_graduate(request: Request) -> dict[str, Any]:
+        """Operator-only: graduate a sandbox partner to production."""
+        if not verify_operator_key(request, configured_key=load_operator_key()):
+            return json_error(
+                code="authentication_error",
+                message="Operator key required (X-Arclya-Operator-Key or ARCLYA_OPERATOR_KEY)",
+                status_code=401,
+            )
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        partner_id = resolve_partner_identifier(
+            app.state.root,
+            partner_id=body.get("partner_id"),
+            sandbox_key=body.get("sandbox_key"),
+        )
+        if not partner_id:
+            return json_error(
+                code="validation_error",
+                message="partner_id or sandbox_key is required",
+                status_code=422,
+            )
+        performed_by = (
+            body.get("performed_by")
+            or request.headers.get("X-Arclya-Operator-Id", "").strip()
+            or "operator_api"
+        )
+        try:
+            result = graduate_partner(
+                app.state.root,
+                partner_id=partner_id,
+                graduated_by=performed_by,
+            )
+        except GraduationError as exc:
+            assessment = assess_graduation_readiness(app.state.root, partner_id)
+            return json_error(
+                code=exc.code,
+                message=str(exc),
+                details={
+                    "partner_id": partner_id,
+                    "blocking_reasons": exc.reasons,
+                    "graduation_ready": assessment.get("graduation_ready", False),
+                    "milestones": assessment.get("milestones", {}),
+                },
+                status_code=409,
+            )
+        return {
+            "success": True,
+            "partner_id": result["partner_id"],
+            "agent_name": result["agent_name"],
+            "production_key": result["production_key"],
+            "production_key_prefix": result["production_key_prefix"],
+            "sandbox_keys_revoked": result["sandbox_keys_revoked"],
+            "graduated_at": result["graduated_at"],
+            "graduated_by": result["graduated_by"],
+            "audit_id": result["audit_id"],
+            "notification": result.get("notification"),
+            "message": "Sandbox keys revoked. Store the production key securely — it is shown once.",
+        }
+
+    @app.post("/onboarding/validate")
+    async def onboarding_validate(request: Request) -> dict[str, Any]:
+        """Validate a product profile before or during onboarding (no auth required)."""
+        try:
+            body = await request.json()
+        except Exception:
+            return json_error(
+                code="validation_error",
+                message="Request body must be valid JSON with product_profile object",
+                status_code=422,
+            )
+        profile = body.get("product_profile") or body
+        if not isinstance(profile, dict):
+            return json_error(
+                code="validation_error",
+                message="product_profile must be an object",
+                status_code=422,
+            )
+        ok, missing = validate_product_profile(profile)
+        errors = format_validation_errors(missing)
+        caller = _caller_context(request)
+        partner_id = caller.get("partner_id")
+        if partner_id:
+            if ok:
+                record_partner_activity(
+                    app.state.root,
+                    partner_id,
+                    event="profile_validated",
+                )
+                log_sandbox_audit(
+                    app.state.root,
+                    action="sandbox_profile_validated",
+                    reasoning="Product profile passed validation",
+                    partner_id=partner_id,
+                )
+            elif caller.get("mode") == "sandbox":
+                record_sandbox_security_event(
+                    app.state.root,
+                    "validation_failed",
+                    partner_id=partner_id,
+                    path="/onboarding/validate",
+                    details={"missing_fields": missing},
+                )
+        result: dict[str, Any] = {
+            "valid": ok,
+            "onboarding_complete": ok,
+            "missing_fields": missing,
+            "validation_errors": errors,
+            "fields_remaining": len(missing),
+            "summary": validation_summary(missing),
+            "destination_cta_preview": build_destination_cta(profile) if ok else None,
+            "success_definition": SUCCESS_DEFINITION,
+        }
+        if not ok and errors:
+            result["fix_hint"] = (
+                f"Fix {len(missing)} field(s) below, then re-submit until valid: true."
+            )
+            result["required_fields"] = [
+                "agent_name", "product_name", "product_description", "target_customer",
+                "typical_deal_size", "common_objections (≥3)", "preferred_pricing_model",
+                "accepts_crypto", "destination_link",
+            ]
+        if partner_id:
+            progress = build_partner_progress(app.state.root, partner_id)
+            if progress:
+                result["partner_progress"] = {
+                    "partner_id": progress["partner_id"],
+                    "milestone_progress": progress["milestone_progress"],
+                    "milestones": progress["milestones"],
+                    "graduation_ready": progress["graduation_ready"],
+                    "next_step": progress["next_step"],
+                    "progress_url": progress["progress_url"],
+                }
+                if ok:
+                    result["milestone_achieved"] = "profile_validated"
+                    result["next_step"] = recommend_next_step(
+                        progress["milestones"],
+                        graduation_ready=progress["graduation_ready"],
+                    )
+        return apply_sandbox_markers(result, sandbox=caller.get("mode") == "sandbox")
+
+    @app.get("/health")
+    async def health(detailed: bool = False) -> dict[str, Any]:
+        ops = build_ops_status(app.state.root)
+        base = {
+            "status": ops.get("status", "healthy"),
             "service": "arclya2a",
             "auth_enabled": bool(app.state.api_key),
             "rate_limit_per_minute": limit,
+            "checked_at": ops.get("checked_at"),
+            "learning_last_run": ops.get("learning", {}).get("last_run_at"),
+            "tool_failure_rate": ops.get("tools", {}).get("failure_rate"),
+            "pending_high_risk_patches": ops.get("pending_high_risk_count", 0),
+        }
+        if detailed:
+            base["operations"] = ops
+        return base
+
+    @app.get("/status")
+    async def status() -> dict[str, Any]:
+        """Full operational status: learning, tools, handoffs, pending patches."""
+        ops = build_ops_status(app.state.root)
+        return {
+            "service": "arclya2a",
+            "auth_enabled": bool(app.state.api_key),
+            **ops,
+        }
+
+    @app.get("/ops/dashboard")
+    async def ops_dashboard() -> dict[str, Any]:
+        """Operational dashboard: learning activity, tool health, pending patches."""
+        return build_ops_dashboard(app.state.root)
+
+    @app.get("/security/events")
+    async def security_events(
+        event_type: str | None = None,
+        partner_id: str | None = None,
+        severity: str | None = None,
+        hours: float | None = 24,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """Query recent security events with optional filters."""
+        from arclya2a.observability.security_events import build_security_metrics, list_security_events
+
+        safe_limit = max(1, min(limit, 200))
+        return {
+            "events": list_security_events(
+                app.state.root,
+                event_type=event_type,
+                partner_id=partner_id,
+                severity=severity,
+                hours=hours,
+                limit=safe_limit,
+            ),
+            "metrics": build_security_metrics(app.state.root),
+            "filters": {
+                "event_type": event_type,
+                "partner_id": partner_id,
+                "severity": severity,
+                "hours": hours,
+                "limit": safe_limit,
+            },
         }
 
     @app.post("/orchestrate/handoff-chain", response_model=HandoffChainResponse)
@@ -311,16 +811,19 @@ def create_app(
                 estimated_cost_usd=req.estimated_cost_usd,
                 auto_route=req.auto_route,
                 entry_agent=req.entry_agent,
+                partner_id=caller.get("partner_id"),
+                sandbox_mode=caller.get("mode") == "sandbox",
             )
         except HandoffValidationError:
             raise
         except EnvironmentError:
             raise
         except Exception as exc:
-            logger.exception(
-                "handoff_chain_failed deal_id=%s client_id=%s",
-                req.deal_id,
-                caller.get("client_id"),
+            log_handoff_chain_failed(
+                app.state.root,
+                deal_id=req.deal_id,
+                client_id=caller.get("client_id"),
+                error=str(exc),
             )
             return json_error(
                 code="orchestration_failed",
@@ -375,7 +878,61 @@ def create_app(
             emergency_stop=result.emergency_stop,
             uses_xai_inference=result.uses_xai_inference,
         )
-        return response.model_dump()
+        response_dict = response.model_dump()
+
+        if caller.get("mode") == "sandbox":
+            response_dict = apply_sandbox_markers(response_dict, sandbox=True)
+            partner_id = caller.get("partner_id")
+            if partner_id:
+                record_partner_activity(
+                    app.state.root,
+                    partner_id,
+                    event="handoff_complete",
+                    details={"summary": summary.model_dump()},
+                )
+                progress = build_partner_progress(app.state.root, partner_id)
+                if progress:
+                    response_dict["partner_progress"] = {
+                        "partner_id": progress["partner_id"],
+                        "milestone_progress": progress["milestone_progress"],
+                        "milestones": progress["milestones"],
+                        "graduation_ready": progress["graduation_ready"],
+                        "next_step": progress["next_step"],
+                        "progress_url": progress["progress_url"],
+                    }
+                    response_dict["journey_hints"] = _sandbox_handoff_hints(summary.model_dump())
+                log_sandbox_audit(
+                    app.state.root,
+                    action="sandbox_handoff_complete",
+                    reasoning=f"Sandbox handoff for deal {req.deal_id}",
+                    partner_id=partner_id,
+                    metadata={
+                        "deal_id": req.deal_id,
+                        "emergency_stop": summary.emergency_stop,
+                        "agents_executed": summary.agents_executed,
+                    },
+                )
+                if summary.emergency_stop:
+                    record_sandbox_security_event(
+                        app.state.root,
+                        "emergency_stop",
+                        partner_id=partner_id,
+                        path="/orchestrate/handoff-chain",
+                        details={"deal_id": req.deal_id},
+                    )
+                for hop in result.handoff_chain:
+                    payload = hop.get("payload") or {}
+                    if payload.get("ready_to_send") or (
+                        payload.get("recruitment_draft", {}).get("ready_to_send")
+                    ):
+                        record_partner_activity(
+                            app.state.root,
+                            partner_id,
+                            event="recruitment_ready",
+                        )
+                        break
+
+        return response_dict
 
     @app.get("/orchestrate/route")
     async def route_preview(
@@ -403,14 +960,129 @@ def create_app(
         entry = orchestrator.route(ssot)
         return {"entry_agent": entry}
 
+    @app.get("/tools")
+    async def list_tools(agent_id: str | None = None) -> dict[str, Any]:
+        registry = ToolRegistry(app.state.root)
+        if agent_id:
+            return {
+                "agent_id": agent_id,
+                "tools": registry.catalog_for_agent(agent_id),
+                "available": registry.list_for_agent(agent_id, only_available=True),
+            }
+        return registry.summary()
+
+    @app.get("/tools/executions")
+    async def tool_executions(
+        request: Request,
+        limit: int = 50,
+        agent_id: str | None = None,
+        tool_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Recent tool execution log for debugging and production trust."""
+        rows = list_tool_executions(
+            app.state.root,
+            limit=min(limit, 200),
+            agent_id=agent_id,
+            tool_id=tool_id,
+        )
+        return {
+            "executions": rows,
+            "summary": execution_summary(app.state.root, limit=limit),
+            "filters": {"agent_id": agent_id, "tool_id": tool_id, "limit": limit},
+        }
+
+    @app.get("/billing/deals")
+    async def billing_deals(request: Request, limit: int = 50) -> dict[str, Any]:
+        deals = list_closed_deals(app.state.root, limit=limit)
+        return {"deals": deals, "summary": billing_summary(app.state.root)}
+
+    @app.get("/learning/patches")
+    async def learning_patches(
+        request: Request,
+        status: str | None = None,
+        agent_id: str | None = None,
+    ) -> dict[str, Any]:
+        """List versioned prompt patches for review."""
+        patches = list_patches(app.state.root, status=status, agent_id=agent_id)
+        return {
+            "patches": patches,
+            "count": len(patches),
+            "filters": {"status": status, "agent_id": agent_id},
+        }
+
+    @app.get("/learning/patches/dashboard")
+    async def learning_patches_dashboard(request: Request) -> dict[str, Any]:
+        """Dashboard: pending patches, recent applied, learning runs, issue summary."""
+        return build_dashboard(app.state.root)
+
+    @app.get("/learning/runs")
+    async def learning_runs(request: Request, limit: int = 20) -> dict[str, Any]:
+        """List recent background and manual learning cycles."""
+        runs = list_learning_runs(app.state.root, limit=limit)
+        return {"runs": runs, "count": len(runs), "scheduler_enabled": scheduler_enabled()}
+
+    @app.post("/learning/run")
+    async def learning_run_now(request: Request) -> dict[str, Any]:
+        """Trigger execution analysis, patch generation, and safe low-risk auto-apply."""
+        body: dict[str, Any] = {}
+        try:
+            raw = await request.body()
+            if raw:
+                body = json.loads(raw)
+        except Exception:
+            body = {}
+        result = run_learning_cycle(
+            app.state.root,
+            trigger="manual",
+            demo_report=body.get("demo_report"),
+            auto_apply_low_risk=body.get("auto_apply_low_risk", True),
+        )
+        return result
+
+    @app.get("/learning/scheduler/status")
+    async def learning_scheduler_status(request: Request) -> dict[str, Any]:
+        """Scheduler configuration and whether a run is due."""
+        should, reason = should_run_learning(app.state.root)
+        dashboard = build_dashboard(app.state.root)
+        return {
+            "enabled": scheduler_enabled(),
+            "should_run": should,
+            "reason": reason,
+            "scheduler": dashboard.get("scheduler", {}),
+        }
+
+    @app.post("/learning/patches/{patch_id}/apply")
+    async def apply_learning_patch(patch_id: str, request: Request) -> dict[str, Any]:
+        """Apply an approved pending patch to the live prompt."""
+        try:
+            result = apply_patch_by_id(app.state.root, patch_id)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return result
+
+    @app.post("/learning/execution-analyze")
+    async def execution_analyze(request: Request) -> dict[str, Any]:
+        """Analyze tool/billing/demo execution data and emit learning signal."""
+        body = {}
+        try:
+            raw = await request.body()
+            if raw:
+                body = json.loads(raw)
+        except Exception:
+            body = {}
+        signal = emit_execution_learning_signal(app.state.root, body.get("demo_report"))
+        return {"improvement_signal": signal}
+
     @app.post("/learning/campaign")
     async def campaign_learning(request: Request) -> dict[str, Any]:
         orchestrator = _orchestrator()
+        emit_execution_learning_signal(app.state.root)
+        demo_signal = load_latest_demo_signal(app.state.root)
         try:
             result = orchestrator.run_chain(
                 chain=["meta_optimizer"],
                 initial_ssot={"deal_id": "learning", "summary": "Campaign learning", "stage": "closed", "metadata": {}},
-                task_context="Analyze latest campaign results",
+                task_context="Analyze latest campaign results and demo outcomes",
             )
         except Exception as exc:
             logger.exception("campaign_learning_failed")
@@ -425,9 +1097,49 @@ def create_app(
             "handoff": handoff,
             "prompt_patch": handoff.get("payload", {}).get("prompt_patch"),
             "improvement_signal": handoff.get("payload", {}).get("improvement_signal"),
+            "demo_signal_used": demo_signal is not None,
             "uses_xai_inference": result.uses_xai_inference,
             "cost_records": result.cost_records,
         }
+
+    @app.post("/learning/demo-outcomes")
+    async def demo_outcomes_learning(request: Request) -> dict[str, Any]:
+        try:
+            body = await request.json()
+        except Exception:
+            return json_error(
+                code="validation_error",
+                message="Request body must be valid JSON demo report",
+                status_code=422,
+            )
+        signal = emit_demo_learning_signal(app.state.root, body)
+        emit_execution_learning_signal(app.state.root, body)
+        orchestrator = _orchestrator()
+        try:
+            result = orchestrator.run_chain(
+                chain=["meta_optimizer"],
+                initial_ssot={"deal_id": "demo_learning", "summary": "Demo outcome learning", "stage": "closed", "metadata": {}},
+                task_context="Analyze demo outcomes and suggest prompt improvements",
+            )
+        except Exception as exc:
+            logger.exception("demo_learning_failed")
+            return json_error(
+                code="learning_failed",
+                message="Demo outcome learning failed",
+                details=str(exc),
+                status_code=500,
+            )
+        handoff = result.handoff_chain[0] if result.handoff_chain else {}
+        return {
+            "demo_signal": signal,
+            "improvement_signal": handoff.get("payload", {}).get("improvement_signal"),
+            "prompt_patch": handoff.get("payload", {}).get("prompt_patch"),
+            "uses_xai_inference": result.uses_xai_inference,
+        }
+
+    checkout_router = APIRouter(tags=["payments"])
+    register_crypto_checkout_routes(checkout_router)
+    app.include_router(checkout_router)
 
     @app.get("/prompt/assembly/{agent_id}")
     async def prompt_assembly(agent_id: str, request: Request) -> dict[str, Any]:

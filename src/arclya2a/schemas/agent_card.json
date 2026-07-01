@@ -24,6 +24,18 @@
         "stateTransitionHistory": { "type": "boolean" }
       }
     },
+    "platform": {
+      "type": "object",
+      "properties": {
+        "phase": { "type": "string" },
+        "close_type": { "type": "string" },
+        "pricing_model": { "type": "string" },
+        "billing": { "type": "string" },
+        "features": { "type": "array", "items": { "type": "string" } },
+        "lifecycle": { "type": "array", "items": { "type": "string" } },
+        "success_definition": { "type": "string" }
+      }
+    },
     "defaultInputModes": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
     "defaultOutputModes": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
     "skills": {
@@ -39,6 +51,31 @@
           "tags": { "type": "array", "items": { "type": "string" } }
         }
       }
+    },
+    "authentication": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string" },
+        "in": { "type": "string" },
+        "name": { "type": "string" },
+        "alternate": { "type": "string" }
+      }
+    },
+    "documentation": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "rel": { "type": "string" },
+          "type": { "type": "string" },
+          "title": { "type": "string" },
+          "href": { "type": "string" }
+        }
+      }
+    },
+    "endpoints": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
     }
   }
 }
