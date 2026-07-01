@@ -48,7 +48,7 @@ def _mock_xai_response(agent_id: str) -> dict:
             "product_profile": {
                 "agent_name": "Test Agent",
                 "product_name": "Test Product",
-                "product_description": "A2A outreach tool",
+                "product_description": "Agent-to-agent outreach platform with pay-on-close lead routing.",
                 "target_customer": "SaaS founders",
                 "typical_deal_size": "$49/mo",
                 "common_objections": ["Price too high", "Unclear ROI", "Integration effort"],
