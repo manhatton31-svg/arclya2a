@@ -9,19 +9,17 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      ARCLYA_SKIP_DOTENV: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: |
-          pip install -e ".[dev]"
+        run: pip install -e ".[dev]"
 
       - name: Run full test suite (includes rehearsal regression tests)
         run: python -m pytest -q
-
-      - name: Run rehearsal tests explicitly
-        run: python -m pytest -m rehearsal -q

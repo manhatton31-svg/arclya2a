@@ -1,8 +1,5 @@
 import json as json_module
 from pathlib import Path
-from unittest.mock import MagicMock
-
-import httpx
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -131,26 +128,23 @@ def root() -> Path:
 
 @pytest.fixture
 def mock_xai(monkeypatch):
-    """Mock httpx at network boundary; exercises real XAIClient.chat_completion."""
+    """Mock xAI inference without patching global httpx (TestClient uses httpx too)."""
     from arclya2a.xai.client import XAIClient
 
-    original_chat = XAIClient.chat_completion
-
-    def wrapped_chat(self, *, messages, model, agent_id):
-        _AGENT_CONTEXT["id"] = agent_id
-        return original_chat(self, messages=messages, model=model, agent_id=agent_id)
-
-    def fake_post(self, url, json=None, headers=None, **kwargs):
-        body = _mock_xai_response(_AGENT_CONTEXT["id"])
-        response = MagicMock()
-        response.status_code = 200
-        response.raise_for_status = MagicMock()
-        response.json.return_value = {
+    def mock_chat_completion(self, *, messages, model, agent_id):
+        body = _mock_xai_response(agent_id)
+        cost_record = self.record_cost(
+            agent_id=agent_id,
+            model=model,
+            input_tokens=500,
+            output_tokens=200,
+            cached_input_tokens=400,
+        )
+        return {
             "choices": [{"message": {"content": json_module.dumps(body)}}],
             "usage": {"prompt_tokens": 500, "completion_tokens": 200, "cached_tokens": 400},
+            "cost_record": cost_record,
         }
-        return response
 
-    monkeypatch.setattr(httpx.Client, "post", fake_post)
-    monkeypatch.setattr(XAIClient, "chat_completion", wrapped_chat)
+    monkeypatch.setattr(XAIClient, "chat_completion", mock_chat_completion)
     return XAIClient(ROOT, api_key="test-key-mock")
