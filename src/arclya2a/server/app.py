@@ -892,8 +892,14 @@ def create_app(
                     app.state.root,
                     partner_id,
                     event="handoff_complete",
-                    details={"summary": summary.model_dump()},
+                    details={"summary": summary.model_dump(), "deal_id": req.deal_id},
                 )
+                if summary.entry_agent == "recruiter" and not summary.emergency_stop:
+                    record_partner_activity(
+                        app.state.root,
+                        partner_id,
+                        event="recruitment_ready",
+                    )
                 progress = build_partner_progress(app.state.root, partner_id)
                 if progress:
                     response_dict["partner_progress"] = {
