@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -806,7 +807,8 @@ def create_app(
         )
 
         try:
-            result = orchestrator.run_chain(
+            result = await asyncio.to_thread(
+                orchestrator.run_chain,
                 initial_ssot=initial_ssot,
                 task_context=req.task_context,
                 revenue_usd=req.revenue_usd,

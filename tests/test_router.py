@@ -57,6 +57,28 @@ def test_resolve_closer_flow_chain(root):
     assert chain[-1] == "final_arbiter"
 
 
+def test_sandbox_mode_uses_entry_agent_only(root, mock_xai):
+    """Sandbox chains run one agent per request (Render timeout / rehearsal speed)."""
+    from arclya2a.orchestrator.engine import Orchestrator
+
+    orch = Orchestrator(root, xai_client=mock_xai)
+    ssot = {
+        "deal_id": "d1",
+        "summary": "Sandbox recruit",
+        "stage": "recruiting",
+        "metadata": {
+            "onboarding_complete": True,
+            "acquisition_stage": "prospect",
+        },
+    }
+    result = orch.run_chain(
+        initial_ssot=ssot,
+        task_context="recruit",
+        sandbox_mode=True,
+    )
+    assert [h["agent_id"] for h in result.handoff_chain] == ["recruiter"]
+
+
 def test_resolve_recruiter_flow_chain_skips_onboarding(root):
     import json
     with open(root / "agents" / "registry.json", encoding="utf-8") as f:

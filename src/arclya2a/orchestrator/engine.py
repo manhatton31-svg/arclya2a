@@ -121,14 +121,25 @@ class Orchestrator:
         sandbox_mode: bool | None = None,
     ) -> OrchestrationResult:
         """Execute a multi-agent handoff chain via registry dispatch."""
+        sandbox_active = (
+            sandbox_mode if sandbox_mode is not None else is_sandbox_active()
+        )
         routed_entry: str | None = None
         if chain is None:
             if auto_route:
                 routed_entry = route_entry_agent(initial_ssot, explicit=entry_agent)
-                chain = resolve_flow_chain(self.agents, routed_entry)
+                # Sandbox/rehearsal: one xAI turn per request to stay under Render gateway limits.
+                if sandbox_active:
+                    chain = [routed_entry]
+                else:
+                    chain = resolve_flow_chain(self.agents, routed_entry)
             else:
                 routed_entry = entry_agent or "outreach_worker"
-                chain = self.resolve_chain(routed_entry)
+                chain = (
+                    [routed_entry]
+                    if sandbox_active
+                    else self.resolve_chain(routed_entry)
+                )
 
         handoff_id = str(uuid.uuid4())
         ssot = dict(initial_ssot)
