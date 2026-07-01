@@ -262,6 +262,50 @@ def test_sandbox_tools_dry_run_by_default(root, monkeypatch):
     assert is_sandbox_active() is False
 
 
+def test_sandbox_rehearsal_close_normalizes_lead_routing_confirmed(root):
+    agent = {"id": "closer", "handoff_targets": ["profit_guardrail"]}
+    profile = {
+        "agent_name": "Rehearsal Seller",
+        "product_name": "Rehearsal Product",
+        "product_description": "Sandbox rehearsal product.",
+        "target_customer": "Test buyers",
+        "typical_deal_size": "$40",
+        "common_objections": ["A", "B", "C"],
+        "preferred_pricing_model": "success_based",
+        "accepts_crypto": False,
+        "destination_link": "https://rehearsal.example/signup",
+        "affiliate_code": "rehearsal_sbx",
+    }
+    handoff = {
+        "status": "COMPLETE",
+        "payload": {
+            "close_package": {"subject": "Confirm routing", "body": "Pay-on-close terms"},
+        },
+    }
+    context = {
+        "task_context": "Sandbox rehearsal: secure lead routing commitment",
+        "ssot": {
+            "deal_id": "rehearsal_abc_close",
+            "metadata": {
+                "product_profile": profile,
+                "product_profile_complete": True,
+                "onboarding_complete": True,
+            },
+        },
+        "revenue_usd": 49,
+        "estimated_cost_usd": 5,
+    }
+
+    set_sandbox_active(True)
+    try:
+        result = _validate_closer(agent, handoff, root, context)
+        assert result["payload"]["lead_routing_confirmed"] is True
+        assert result["payload"]["deal_closed"] is True
+        assert result["payload"]["close_package"]["cta_url"]
+    finally:
+        set_sandbox_active(False)
+
+
 def test_sandbox_billing_skipped_in_closer_validator(root):
     agent = {"id": "closer", "handoff_targets": ["profit_guardrail"]}
     profile = {
