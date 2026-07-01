@@ -93,6 +93,7 @@ from arclya2a.learning.learning_scheduler import (
 )
 from arclya2a.learning.patch_outcomes import build_dashboard, list_learning_runs
 from arclya2a.server.crypto_checkout import register_crypto_checkout_routes
+from arclya2a.server.crypto_test_payer_routes import register_crypto_test_payer_routes
 from arclya2a.server.schemas import HandoffChainRequest, HandoffChainResponse, HandoffChainSummary
 from arclya2a.xai.client import XAIClient
 from arclya2a.xai.prompt_helpers import assemble_agent_prompt, assembly_to_response
@@ -1148,6 +1149,7 @@ def create_app(
 
     checkout_router = APIRouter(tags=["payments"])
     register_crypto_checkout_routes(checkout_router)
+    register_crypto_test_payer_routes(checkout_router)
     app.include_router(checkout_router)
 
     @app.get("/prompt/assembly/{agent_id}")
