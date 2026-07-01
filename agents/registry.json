@@ -16,14 +16,14 @@
     {
       "id": "recruiter",
       "name": "A2A Recruiter",
-      "role_card": "Recruit complementary agents onto the platform with margin-aware, JSON-based partnership proposals. Never onboard or close deals.",
+      "role_card": "Recruit partner agents who can send warm leads to onboarded sellers. Hand off qualified partners to the Closer via orchestration routing, never re-run onboarding.",
       "prompt_file": "recruiter_prompt.md",
       "success_metrics": { "invite_quality_score": 80, "a2a_compliance": true },
       "good_enough": "One recruitment draft with A2A CTA and confidence >= 75.",
       "model_tier": "economy",
       "error_policy": "retry_once_then_escalate",
       "capabilities": ["agent_recruitment", "a2a_acquisition"],
-      "handoff_targets": ["onboarding_specialist"]
+      "handoff_targets": ["profit_guardrail"]
     },
     {
       "id": "closer",

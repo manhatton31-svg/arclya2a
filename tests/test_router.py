@@ -55,3 +55,14 @@ def test_resolve_closer_flow_chain(root):
     chain = resolve_flow_chain(agents, "closer")
     assert chain[0] == "closer"
     assert chain[-1] == "final_arbiter"
+
+
+def test_resolve_recruiter_flow_chain_skips_onboarding(root):
+    import json
+    with open(root / "agents" / "registry.json", encoding="utf-8") as f:
+        agents = {a["id"]: a for a in json.load(f)["agents"]}
+    chain = resolve_flow_chain(agents, "recruiter")
+    assert chain[0] == "recruiter"
+    assert "onboarding_specialist" not in chain
+    assert "profit_guardrail" in chain
+    assert chain[-1] == "final_arbiter"

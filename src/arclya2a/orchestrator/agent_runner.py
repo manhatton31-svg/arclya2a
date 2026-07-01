@@ -386,16 +386,22 @@ def _validate_closer(
 def _validate_recruiter(
     agent: dict[str, Any], handoff: dict[str, Any], root: Path, context: dict[str, Any]
 ) -> dict[str, Any]:
-    """Tag acquisition stage on recruitment handoff."""
+    """Tag acquisition stage; route to guardrail chain (not onboarding)."""
     if handoff.get("status") == "COMPLETE":
         stage = handoff.get("payload", {}).get("acquisition_stage", "invited")
         handoff["ssot_updates"] = handoff.get("ssot_updates") or {
             "stage": "recruiting",
             "metadata": {"acquisition_stage": stage},
         }
-        targets = agent.get("handoff_targets", [])
-        if targets:
-            handoff["next_action"] = f"handoff_to_{targets[0]}"
+        ssot = context["ssot"]
+        meta = ssot.get("metadata", {})
+        onboarded = meta.get("onboarding_complete") or meta.get("product_profile_complete")
+        if not onboarded:
+            handoff["next_action"] = "handoff_to_onboarding_specialist"
+        else:
+            targets = agent.get("handoff_targets", [])
+            if targets:
+                handoff["next_action"] = f"handoff_to_{targets[0]}"
     return handoff
 
 

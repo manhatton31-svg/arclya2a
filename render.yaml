@@ -1,0 +1,18 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: arclya2a
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt && pip install .
+    startCommand: uvicorn arclya2a.server.app:create_app --factory --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"
+      - key: ARCLYA_RATE_LIMIT_PER_MINUTE
+        value: "60"
+      - key: ARCLYA_API_KEY
+        generateValue: true
+      - key: XAI_API_KEY
+        sync: false

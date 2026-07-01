@@ -78,13 +78,13 @@ def _mock_xai_response(agent_id: str) -> dict:
         },
         "recruiter": {
             "status": "COMPLETE",
-            "next_action": "handoff_to_onboarding_specialist",
+            "next_action": "handoff_to_profit_guardrail",
             "recruitment_draft": {
                 "target_agent_id": "prospect_agent",
                 "subject": "Join Arclya A2A",
                 "body": "Agent-to-agent partnership invite",
                 "value_props": ["Low marginal cost"],
-                "proposed_handoff_chain": ["onboarding_specialist"],
+                "proposed_handoff_chain": ["closer"],
             },
             "acquisition_stage": "invited",
             "validation": {"confidence": 80, "check": "Recruitment draft ready"},

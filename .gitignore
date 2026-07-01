@@ -9,3 +9,14 @@ build/
 venv/
 .env
 *.log
+
+# Runtime / local dev artifacts
+data/audit/
+data/cost_tracking/
+learning/applied_patches.jsonl
+learning/learning_signals.jsonl
+learning/prompt_patches/
+terminals/
+docs/version-history/
+config/profiles/demo_*.json
+mcps/
