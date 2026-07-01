@@ -262,6 +262,31 @@ def test_sandbox_tools_dry_run_by_default(root, monkeypatch):
     assert is_sandbox_active() is False
 
 
+def test_sandbox_rehearsal_recruiter_normalizes_ready_to_send(root):
+    from arclya2a.orchestrator.agent_runner import _validate_recruiter
+
+    agent = {"id": "recruiter", "handoff_targets": ["profit_guardrail"]}
+    handoff = {
+        "status": "COMPLETE",
+        "payload": {"acquisition_stage": "prospect"},
+    }
+    context = {
+        "task_context": "Sandbox rehearsal: recruit partner agent",
+        "ssot": {
+            "deal_id": "rehearsal_abc_recruit",
+            "metadata": {"onboarding_complete": True, "product_profile_complete": True},
+        },
+    }
+
+    set_sandbox_active(True)
+    try:
+        result = _validate_recruiter(agent, handoff, root, context)
+        assert result["payload"]["ready_to_send"] is True
+        assert result["payload"]["recruitment_draft"]["ready_to_send"] is True
+    finally:
+        set_sandbox_active(False)
+
+
 def test_sandbox_rehearsal_close_normalizes_lead_routing_confirmed(root):
     agent = {"id": "closer", "handoff_targets": ["profit_guardrail"]}
     profile = {

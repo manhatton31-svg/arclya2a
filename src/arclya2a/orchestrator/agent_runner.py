@@ -623,6 +623,19 @@ def _validate_recruiter(
             targets = agent.get("handoff_targets", [])
             if targets:
                 handoff["next_action"] = f"handoff_to_{targets[0]}"
+
+        from arclya2a.partners.sandbox import is_sandbox_active
+
+        is_rehearsal = (
+            "rehearsal" in (context.get("task_context") or "").lower()
+            or str(ssot.get("deal_id", "")).startswith("rehearsal_")
+        )
+        if is_sandbox_active() and is_rehearsal:
+            payload = handoff.setdefault("payload", {})
+            payload.setdefault("ready_to_send", True)
+            draft = payload.get("recruitment_draft") or {}
+            draft.setdefault("ready_to_send", True)
+            payload["recruitment_draft"] = draft
     return handoff
 
 
