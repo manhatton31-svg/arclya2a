@@ -198,9 +198,9 @@ def build_handoff_summary(handoff_chain: list[dict[str, Any]], final_ssot: dict[
 
     for handoff in handoff_chain:
         agent_id = handoff.get("agent_id")
-        payload = handoff.get("payload", {})
+        payload = handoff.get("payload") or {}
         if agent_id == "closer":
-            pkg = payload.get("close_package", {})
+            pkg = payload.get("close_package") or {}
             summary.update({
                 "deal_closed": payload.get("deal_closed"),
                 "lead_routing_confirmed": payload.get("lead_routing_confirmed"),
@@ -208,10 +208,10 @@ def build_handoff_summary(handoff_chain: list[dict[str, Any]], final_ssot: dict[
                 "cta_url": pkg.get("cta_url"),
             })
         if agent_id == "profit_guardrail":
-            margin = payload.get("margin_check", {})
+            margin = payload.get("margin_check") or {}
             summary["margin_approved"] = margin.get("approved")
         if agent_id == "final_arbiter":
-            qc = payload.get("qc_result", {})
+            qc = payload.get("qc_result") or {}
             summary["qc_passed"] = qc.get("passed")
 
     return summary

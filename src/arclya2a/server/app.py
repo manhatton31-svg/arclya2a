@@ -926,9 +926,8 @@ def create_app(
                     )
                 for hop in result.handoff_chain:
                     payload = hop.get("payload") or {}
-                    if payload.get("ready_to_send") or (
-                        payload.get("recruitment_draft", {}).get("ready_to_send")
-                    ):
+                    recruitment_draft = payload.get("recruitment_draft") or {}
+                    if payload.get("ready_to_send") or recruitment_draft.get("ready_to_send"):
                         record_partner_activity(
                             app.state.root,
                             partner_id,
