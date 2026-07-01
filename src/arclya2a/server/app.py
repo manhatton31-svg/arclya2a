@@ -96,7 +96,9 @@ from arclya2a.server.schemas import HandoffChainRequest, HandoffChainResponse, H
 from arclya2a.xai.client import XAIClient
 from arclya2a.xai.prompt_helpers import assemble_agent_prompt, assembly_to_response
 
-ROOT = Path(__file__).resolve().parents[3]
+from arclya2a.settings import project_root
+
+ROOT = project_root()
 
 logger = logging.getLogger("arclya2a.server")
 

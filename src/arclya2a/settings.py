@@ -39,10 +39,38 @@ def _wallet_env_key(network: str) -> str:
 
 _dotenv_loaded = False
 
+_ROOT_MARKERS = ("config/core.json", "agents/registry.json")
+
+
+def resolve_project_root(*, start: Path | None = None) -> Path:
+    """Find repository root when running from source or an installed package (e.g. Render)."""
+    override = os.environ.get("ARCLYA_ROOT", "").strip()
+    if override:
+        return Path(override)
+
+    candidates: list[Path] = []
+    if start is not None:
+        candidates.append(start)
+    here = Path(__file__).resolve()
+    candidates.extend(here.parents)
+    candidates.append(Path.cwd())
+    candidates.append(Path("/opt/render/project/src"))
+
+    seen: set[Path] = set()
+    for base in candidates:
+        resolved = base.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        if all((resolved / marker).is_file() for marker in _ROOT_MARKERS):
+            return resolved
+
+    return here.parents[2]
+
 
 def project_root() -> Path:
     """Repository root (parent of src/)."""
-    return Path(__file__).resolve().parents[2]
+    return resolve_project_root()
 
 
 def _parse_bool(raw: str | None, *, default: bool = False) -> bool:

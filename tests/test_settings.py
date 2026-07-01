@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from arclya2a.settings import get_settings, load_dotenv, normalize_crypto_network, reset_dotenv_state
+from arclya2a.settings import (
+    get_settings,
+    load_dotenv,
+    normalize_crypto_network,
+    project_root,
+    reset_dotenv_state,
+    resolve_project_root,
+)
 
 
 def test_get_settings_reads_env(monkeypatch):
@@ -63,3 +70,19 @@ def test_resolved_public_url_prefers_arclya_public(monkeypatch):
     monkeypatch.setenv("RENDER_EXTERNAL_URL", "https://render.example")
     settings = get_settings()
     assert settings.resolved_public_url() == "https://arclya.example"
+
+
+def test_project_root_finds_repo_markers():
+    root = project_root()
+    assert (root / "config" / "core.json").is_file()
+    assert (root / "agents" / "registry.json").is_file()
+
+
+def test_resolve_project_root_honors_arclya_root(monkeypatch, tmp_path):
+    fake = tmp_path / "repo"
+    (fake / "config").mkdir(parents=True)
+    (fake / "agents").mkdir(parents=True)
+    (fake / "config" / "core.json").write_text("{}", encoding="utf-8")
+    (fake / "agents" / "registry.json").write_text('{"agents":[]}', encoding="utf-8")
+    monkeypatch.setenv("ARCLYA_ROOT", str(fake))
+    assert resolve_project_root() == fake
