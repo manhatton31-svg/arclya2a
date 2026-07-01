@@ -1,0 +1,1 @@
+"""JSON schemas shipped as package data for runtime validation."""

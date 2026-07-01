@@ -1,3 +1,6 @@
+import json
+from importlib import resources
+
 import pytest
 
 from arclya2a.handoff.validators import (
@@ -23,6 +26,14 @@ def _valid_handoff(**overrides):
     }
     base.update(overrides)
     return base
+
+
+def test_handoff_schema_packaged():
+    """Regression: JSON schema must ship inside the installed package (Render deploy)."""
+    schema_file = resources.files("arclya2a.schemas").joinpath("handoff.json")
+    assert schema_file.is_file()
+    schema = json.loads(schema_file.read_text(encoding="utf-8"))
+    assert schema.get("title") == "HandoffPayload"
 
 
 def test_validate_complete_handoff():

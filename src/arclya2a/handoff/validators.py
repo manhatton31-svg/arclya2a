@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import json
 import re
-from pathlib import Path
+from importlib import resources
 from typing import Any
 
 import jsonschema
-
-_SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schemas" / "handoff.json"
 
 
 class HandoffValidationError(Exception):
@@ -17,7 +15,8 @@ class HandoffValidationError(Exception):
 
 
 def _load_schema() -> dict:
-    with open(_SCHEMA_PATH, encoding="utf-8") as f:
+    schema_file = resources.files("arclya2a.schemas").joinpath("handoff.json")
+    with schema_file.open(encoding="utf-8") as f:
         return json.load(f)
 
 
