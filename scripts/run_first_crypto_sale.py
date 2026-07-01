@@ -13,6 +13,13 @@ Usage
     python scripts/run_first_crypto_sale.py confirm --payment-id cpay_x --tx-hash 0x...
     python scripts/run_first_crypto_sale.py verify --payment-id cpay_x --partner-id tp_abc --deal-id deal_1
     python scripts/run_first_crypto_sale.py run --partner-id tp_abc123 --skip-rehearse
+
+    # Remote crypto sale (intent → send USDC → submit → confirm):
+    python scripts/run_first_crypto_sale.py sale start --partner-id tp_abc --amount 1 --network base
+    python scripts/run_first_crypto_sale.py sale submit --tx-hash 0x...
+    python scripts/run_first_crypto_sale.py sale confirm
+    python scripts/run_first_crypto_sale.py sale status
+    python scripts/run_first_crypto_sale.py sale next
 """
 
 from __future__ import annotations
@@ -35,6 +42,7 @@ from arclya2a.partners.graduation import (  # noqa: E402
 from arclya2a.server.operator_auth import load_operator_key  # noqa: E402
 
 import confirm_crypto_payment as crypto_cli  # noqa: E402
+import crypto_sale_flow as sale_flow  # noqa: E402
 import sandbox_partner_rehearsal as rehearsal  # noqa: E402
 
 RUNBOOK_PATH = ROOT / "docs" / "first-crypto-sale-runbook.md"
@@ -512,7 +520,7 @@ def _build_client() -> tuple[Any, HttpClient]:
     return http, _HttpxAdapter(http)
 
 
-def main(argv: list[str] | None = None, *, http_client: HttpClient | None = None) -> int:
+def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Operator helper for first production partner + first crypto sale",
     )
@@ -520,13 +528,45 @@ def main(argv: list[str] | None = None, *, http_client: HttpClient | None = None
         "command",
         nargs="?",
         default="check",
-        choices=["check", "rehearse", "graduate", "payments", "confirm", "verify", "run", "guide"],
+        choices=[
+            "check",
+            "rehearse",
+            "graduate",
+            "payments",
+            "confirm",
+            "verify",
+            "run",
+            "guide",
+            "sale",
+        ],
         help="Workflow step (default: check)",
     )
-    parser.add_argument("--partner-id", help="Partner ID for graduate / verify / run")
-    parser.add_argument("--payment-id", help="Payment ID for confirm / verify")
-    parser.add_argument("--deal-id", help="Expected deal_id for verify attribution")
-    parser.add_argument("--tx-hash", help="On-chain tx hash for confirm")
+    parser.add_argument(
+        "sale_action",
+        nargs="?",
+        choices=["start", "submit", "confirm", "status", "next", "instructions"],
+        help="With 'sale': start | submit | confirm | status | next | instructions",
+    )
+    parser.add_argument("--partner-id", help="Partner ID for graduate / verify / sale")
+    parser.add_argument("--payment-id", help="Payment ID for confirm / verify / sale")
+    parser.add_argument("--deal-id", help="Expected deal_id for verify / sale attribution")
+    parser.add_argument("--tx-hash", help="On-chain tx hash for confirm / sale submit")
+    parser.add_argument(
+        "--amount",
+        type=float,
+        default=None,
+        help="USD amount for sale start (default: 1.0 or ARCLYA_SALE_AMOUNT_USD)",
+    )
+    parser.add_argument(
+        "--network",
+        default=sale_flow.DEFAULT_NETWORK,
+        help=f"USDC network for sale start (default: {sale_flow.DEFAULT_NETWORK})",
+    )
+    parser.add_argument(
+        "--production-key",
+        default=os.environ.get("ARCLYA_PRODUCTION_KEY", "").strip() or None,
+        help="Graduated partner production key (default: ARCLYA_PRODUCTION_KEY)",
+    )
     parser.add_argument("--sandbox-key", help="Existing sandbox key for rehearsal")
     parser.add_argument("--skip-rehearse", action="store_true", help="Skip rehearsal in run command")
     parser.add_argument("--check-only", action="store_true", help="Graduate: readiness check only")
@@ -536,7 +576,11 @@ def main(argv: list[str] | None = None, *, http_client: HttpClient | None = None
         help="Arclya server URL",
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
-    args = parser.parse_args(argv)
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None, *, http_client: HttpClient | None = None) -> int:
+    args = _parse_args(argv)
 
     if args.command == "guide":
         print(RUNBOOK_PATH)
@@ -545,12 +589,84 @@ def main(argv: list[str] | None = None, *, http_client: HttpClient | None = None
     owns_http = False
     client = http_client
     http = None
-    if client is None and args.command in ("check", "rehearse", "graduate", "payments", "confirm", "verify", "run"):
+    sale_actions = ("start", "submit", "confirm", "status", "next", "instructions")
+    needs_http = args.command in (
+        "check",
+        "rehearse",
+        "graduate",
+        "payments",
+        "confirm",
+        "verify",
+        "run",
+        "sale",
+    )
+    if client is None and needs_http:
         http, client = _build_client()
         owns_http = True
 
     try:
-        if args.command == "check":
+        if args.command == "sale":
+            action = args.sale_action or "next"
+            if action not in sale_actions:
+                print("ERROR: sale requires action: start|submit|confirm|status|next", file=sys.stderr)
+                return 2
+            if action in ("start", "submit", "confirm", "status") and client is None:
+                print("ERROR: HTTP client required for sale actions.", file=sys.stderr)
+                return 2
+            if action == "start":
+                result = sale_flow.run_sale_start(
+                    client,
+                    base_url=args.base_url,
+                    partner_id=args.partner_id,
+                    amount_usd=args.amount,
+                    network=args.network,
+                    deal_id=args.deal_id,
+                    production_key=args.production_key,
+                )
+            elif action == "submit":
+                if not args.tx_hash:
+                    print("ERROR: --tx-hash required for sale submit.", file=sys.stderr)
+                    return 2
+                result = sale_flow.run_sale_submit(
+                    client,
+                    args.tx_hash,
+                    base_url=args.base_url,
+                    payment_id=args.payment_id,
+                    production_key=args.production_key,
+                )
+            elif action == "confirm":
+                result = sale_flow.run_sale_confirm(
+                    client,
+                    base_url=args.base_url,
+                    payment_id=args.payment_id,
+                    tx_hash=args.tx_hash,
+                )
+            elif action == "status":
+                result = sale_flow.run_sale_status(
+                    client,
+                    base_url=args.base_url,
+                    payment_id=args.payment_id,
+                )
+            elif action == "instructions":
+                state = sale_flow.load_state()
+                payment = state.get("payment") or {}
+                if not payment.get("wallet_address"):
+                    print("ERROR: No active sale. Run: sale start", file=sys.stderr)
+                    return 2
+                print(
+                    sale_flow.format_send_instructions(
+                        payment,
+                        base_url=state.get("base_url") or args.base_url,
+                        partner_id=state.get("partner_id"),
+                    )
+                )
+                result = {"ok": True, "state": state}
+            else:
+                result = sale_flow.run_sale_next()
+            if args.json:
+                print(json.dumps(result, indent=2, default=str))
+            return 0 if result.get("ok") else 1
+        elif args.command == "check":
             result = run_check(client, base_url=args.base_url)
         elif args.command == "rehearse":
             result = run_rehearse_step(client, base_url=args.base_url, sandbox_key=args.sandbox_key)
