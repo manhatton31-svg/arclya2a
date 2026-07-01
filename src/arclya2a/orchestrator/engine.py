@@ -23,7 +23,13 @@ from arclya2a.orchestrator.agent_runner import resolve_chain_from_registry, run_
 from arclya2a.security.cross_agent_isolation import enrich_orchestrator_context
 from arclya2a.partners.sandbox import is_sandbox_active
 from arclya2a.orchestrator.router import resolve_flow_chain, route_entry_agent
+from arclya2a.settings import get_settings
 from arclya2a.xai.client import XAIClient
+
+
+def _use_sandbox_fast_chain(sandbox_active: bool) -> bool:
+    """Single-agent chains for sandbox/rehearsal only (Render gateway timeout safe)."""
+    return sandbox_active and get_settings().sandbox_fast_chain
 
 
 @dataclass
@@ -128,8 +134,7 @@ class Orchestrator:
         if chain is None:
             if auto_route:
                 routed_entry = route_entry_agent(initial_ssot, explicit=entry_agent)
-                # Sandbox/rehearsal: one xAI turn per request to stay under Render gateway limits.
-                if sandbox_active:
+                if _use_sandbox_fast_chain(sandbox_active):
                     chain = [routed_entry]
                 else:
                     chain = resolve_flow_chain(self.agents, routed_entry)
@@ -137,7 +142,7 @@ class Orchestrator:
                 routed_entry = entry_agent or "outreach_worker"
                 chain = (
                     [routed_entry]
-                    if sandbox_active
+                    if _use_sandbox_fast_chain(sandbox_active)
                     else self.resolve_chain(routed_entry)
                 )
 

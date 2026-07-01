@@ -232,6 +232,7 @@ class ArclyaSettings:
     sandbox_max_register_per_ip_day: int
     sandbox_rate_limit_per_minute: int
     sandbox_force_dry_run: bool
+    sandbox_fast_chain: bool
     learning_scheduler_enabled: bool
     learning_interval_hours: int
     learning_min_deals: int
@@ -322,6 +323,7 @@ def _build_settings() -> ArclyaSettings:
             _env("ARCLYA_SANDBOX_RATE_LIMIT_PER_MINUTE"), default=10, minimum=3,
         ),
         sandbox_force_dry_run=_parse_bool(_env("ARCLYA_SANDBOX_FORCE_DRY_RUN"), default=True),
+        sandbox_fast_chain=_parse_bool(_env("ARCLYA_REHEARSAL_MODE") or None, default=True),
         learning_scheduler_enabled=_parse_bool(_env("ARCLYA_LEARNING_SCHEDULER_ENABLED"), default=False),
         learning_interval_hours=_parse_int(_env("ARCLYA_LEARNING_INTERVAL_HOURS"), default=6, minimum=1),
         learning_min_deals=_parse_int(_env("ARCLYA_LEARNING_MIN_DEALS"), default=0, minimum=0),

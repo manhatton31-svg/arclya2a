@@ -57,6 +57,31 @@ def test_resolve_closer_flow_chain(root):
     assert chain[-1] == "final_arbiter"
 
 
+def test_production_mode_uses_full_chain(root, mock_xai):
+    """Production partners (non-sandbox) always run guardrail chains."""
+    from arclya2a.orchestrator.engine import Orchestrator
+
+    orch = Orchestrator(root, xai_client=mock_xai)
+    ssot = {
+        "deal_id": "prod_recruit",
+        "summary": "Production recruit",
+        "stage": "recruiting",
+        "metadata": {
+            "onboarding_complete": True,
+            "acquisition_stage": "prospect",
+        },
+    }
+    result = orch.run_chain(
+        initial_ssot=ssot,
+        task_context="recruit partner",
+        sandbox_mode=False,
+    )
+    agents = [h["agent_id"] for h in result.handoff_chain]
+    assert agents[0] == "recruiter"
+    assert "profit_guardrail" in agents
+    assert "final_arbiter" in agents
+
+
 def test_sandbox_mode_uses_entry_agent_only(root, mock_xai):
     """Sandbox chains run one agent per request (Render timeout / rehearsal speed)."""
     from arclya2a.orchestrator.engine import Orchestrator
