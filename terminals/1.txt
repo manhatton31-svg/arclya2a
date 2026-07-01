@@ -3,7 +3,7 @@ pid: 5428
 cwd: "C:\Users\cwhat\arclya2a"
 command: "Set-Location \"C:\\Users\\cwhat\\arclya2a\"; python -m pip install -e \".[dev]\" -q 2>&1; python -m pytest tests/ -v 2>&1"
 started_at: 2026-06-30T20:13:27.562Z
-running_for_ms: 149994   
+running_for_ms: 22739999 
 ---
 python :   WARNING: The script jsonschema.exe is installed in 
 'C:\Users\cwhat\AppData\Roaming\Python\Python314\Scripts' which is not on PATH.

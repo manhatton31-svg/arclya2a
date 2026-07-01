@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from arclya2a.config.product_profile import load_profile_snapshot, save_agent_profile, validate_product_profile
 from arclya2a.learning.campaign_loop import compute_deltas, build_recommendations
 from arclya2a.learning.prompt_updater import apply_learning_signal, load_learned_context, resolve_prompt_path
 from arclya2a.orchestrator.error_policy import (
@@ -61,8 +62,11 @@ def _build_prompt_variables(
     if campaign_path.exists():
         campaign_rows = json.loads(campaign_path.read_text(encoding="utf-8"))
 
+    profile_snapshot = load_profile_snapshot(root, ssot)
+
     return {
         "ssot_snapshot": json.dumps(ssot, indent=2),
+        "product_profile_snapshot": json.dumps(profile_snapshot, indent=2),
         "memory_summary": context.get("memory_summary", ssot.get("summary", "")),
         "task_context": context.get("task_context", ""),
         "handoff_payload": json.dumps(prev, indent=2),
@@ -91,7 +95,10 @@ def _infer_xai(
     with open(root / "config" / "core.json", encoding="utf-8") as f:
         core = json.load(f)
     model = select_model(agent.get("model_tier", "economy"), core)
-    prompt_path = resolve_prompt_path(root, agent["id"])
+    prompt_file = agent.get("prompt_file", f"{agent['id']}.md")
+    prompt_path = root / "prompts" / prompt_file
+    if not prompt_path.exists():
+        prompt_path = resolve_prompt_path(root, agent["id"])
     if not prompt_path.exists():
         raise FileNotFoundError(f"Missing prompt file: {prompt_path}")
 
@@ -275,7 +282,93 @@ def _validate_meta_optimizer(
     return handoff
 
 
+def _validate_onboarding_specialist(
+    agent: dict[str, Any], handoff: dict[str, Any], root: Path, context: dict[str, Any]
+) -> dict[str, Any]:
+    """Persist product profile to SSOT when onboarding completes."""
+    payload = handoff.setdefault("payload", {})
+    profile = payload.get("product_profile", {})
+    complete_flag = payload.get("onboarding_complete", False)
+    is_complete, missing = validate_product_profile(profile)
+
+    if complete_flag and is_complete:
+        agent_id = profile.get("agent_name", "unknown_agent").lower().replace(" ", "_")
+        save_agent_profile(root, agent_id, profile)
+        handoff["ssot_updates"] = handoff.get("ssot_updates") or {
+            "stage": "onboarded",
+            "summary": f"Onboarded: {profile.get('product_name', 'product')}",
+            "metadata": {
+                "product_profile": profile,
+                "product_profile_complete": True,
+                "onboarding_complete": True,
+                "onboarding_status": "complete",
+            },
+        }
+        targets = agent.get("handoff_targets", [])
+        if handoff.get("status") == "COMPLETE" and targets:
+            handoff["next_action"] = f"handoff_to_{targets[0]}"
+    elif not is_complete:
+        handoff["ssot_updates"] = handoff.get("ssot_updates") or {
+            "stage": "onboarding_in_progress",
+            "metadata": {
+                "product_profile": profile,
+                "product_profile_complete": False,
+                "onboarding_complete": False,
+                "missing_fields": missing,
+            },
+        }
+
+    return handoff
+
+
+def _validate_closer(
+    agent: dict[str, Any], handoff: dict[str, Any], root: Path, context: dict[str, Any]
+) -> dict[str, Any]:
+    """Ensure closer only runs for onboarded agents with product profile."""
+    ssot = context["ssot"]
+    meta = ssot.get("metadata", {})
+    if not meta.get("product_profile_complete") and not meta.get("onboarding_complete"):
+        handoff["status"] = "EMERGENCY_STOP"
+        handoff["next_action"] = "route_to_onboarding"
+        handoff["validation"] = {
+            "confidence": 95,
+            "check": "Closer blocked: agent not onboarded",
+        }
+        return handoff
+
+    close_pkg = handoff.get("payload", {}).get("close_package", {})
+    profile = meta.get("product_profile", {})
+    if close_pkg and profile:
+        close_pkg.setdefault("cta_url", profile.get("destination_link", ""))
+        if profile.get("affiliate_code"):
+            close_pkg["cta_url"] = f"{close_pkg['cta_url']}?ref={profile['affiliate_code']}"
+
+    if handoff.get("status") == "COMPLETE":
+        handoff["ssot_updates"] = handoff.get("ssot_updates") or {"stage": "close_package_ready"}
+
+    return handoff
+
+
+def _validate_recruiter(
+    agent: dict[str, Any], handoff: dict[str, Any], root: Path, context: dict[str, Any]
+) -> dict[str, Any]:
+    """Tag acquisition stage on recruitment handoff."""
+    if handoff.get("status") == "COMPLETE":
+        stage = handoff.get("payload", {}).get("acquisition_stage", "invited")
+        handoff["ssot_updates"] = handoff.get("ssot_updates") or {
+            "stage": "recruiting",
+            "metadata": {"acquisition_stage": stage},
+        }
+        targets = agent.get("handoff_targets", [])
+        if targets:
+            handoff["next_action"] = f"handoff_to_{targets[0]}"
+    return handoff
+
+
 VALIDATORS = {
+    "onboarding_specialist": _validate_onboarding_specialist,
+    "recruiter": _validate_recruiter,
+    "closer": _validate_closer,
     "profit_guardrail": _validate_profit_guardrail,
     "final_arbiter": _validate_final_arbiter,
     "meta_optimizer": _validate_meta_optimizer,

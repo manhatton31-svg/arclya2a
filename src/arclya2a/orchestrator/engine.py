@@ -20,6 +20,7 @@ from arclya2a.handoff.validators import (
     validate_structured_feedback,
 )
 from arclya2a.orchestrator.agent_runner import resolve_chain_from_registry, run_registry_agent
+from arclya2a.orchestrator.router import resolve_flow_chain, route_entry_agent
 from arclya2a.xai.client import XAIClient
 
 
@@ -31,6 +32,7 @@ class OrchestrationResult:
     cost_records: list[dict[str, Any]] = field(default_factory=list)
     emergency_stop: bool = False
     uses_xai_inference: bool = False
+    entry_agent: str | None = None
 
 
 class Orchestrator:
@@ -52,6 +54,10 @@ class Orchestrator:
         """Resolve chain dynamically from registry handoff_targets."""
         return resolve_chain_from_registry(self.agents, start_agent)
 
+    def route(self, ssot: dict[str, Any], *, entry_agent: str | None = None) -> str:
+        """Route to entry agent: new → onboarding, onboarded+warm → closer."""
+        return route_entry_agent(ssot, explicit=entry_agent)
+
     def run_chain(
         self,
         *,
@@ -60,10 +66,18 @@ class Orchestrator:
         task_context: str,
         revenue_usd: float = 49.0,
         estimated_cost_usd: float = 5.0,
+        entry_agent: str | None = None,
+        auto_route: bool = True,
     ) -> OrchestrationResult:
         """Execute a multi-agent handoff chain via registry dispatch."""
+        routed_entry: str | None = None
         if chain is None:
-            chain = self.resolve_chain("outreach_worker")
+            if auto_route:
+                routed_entry = route_entry_agent(initial_ssot, explicit=entry_agent)
+                chain = resolve_flow_chain(self.agents, routed_entry)
+            else:
+                routed_entry = entry_agent or "outreach_worker"
+                chain = self.resolve_chain(routed_entry)
 
         handoff_id = str(uuid.uuid4())
         ssot = dict(initial_ssot)
@@ -141,6 +155,7 @@ class Orchestrator:
                     cost_records=cost_records,
                     emergency_stop=True,
                     uses_xai_inference=_compute_uses_xai(chain_results),
+                    entry_agent=routed_entry,
                 )
 
             previous_agent = agent_id
@@ -152,6 +167,7 @@ class Orchestrator:
             audit_ids=audit_ids,
             cost_records=cost_records,
             uses_xai_inference=_compute_uses_xai(chain_results),
+            entry_agent=routed_entry,
         )
 
 

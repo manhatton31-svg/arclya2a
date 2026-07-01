@@ -161,5 +161,161 @@
     },
     "priority": "high",
     "snapshot_version": "20260630T202613"
+  },
+  {
+    "timestamp": "2026-07-01T02:24:27.702198+00:00",
+    "campaign_id": "camp_demo_001",
+    "recommendations": [
+      "test rec",
+      "Improve open_rate: underperformed by 7.00%",
+      "Improve reply_rate: underperformed by 3.00%"
+    ],
+    "deltas": {
+      "open_rate": -0.07,
+      "reply_rate": -0.03,
+      "conversion_rate": -0.01
+    },
+    "priority": "high",
+    "snapshot_version": "20260701T022427"
+  },
+  {
+    "timestamp": "2026-07-01T02:24:29.283467+00:00",
+    "campaign_id": "camp_demo_001",
+    "recommendations": [
+      "Improve subject lines for open rate",
+      "Improve open_rate: underperformed by 7.00%",
+      "Improve reply_rate: underperformed by 3.00%"
+    ],
+    "deltas": {
+      "open_rate": -0.07,
+      "reply_rate": -0.03,
+      "conversion_rate": -0.01
+    },
+    "priority": "high",
+    "snapshot_version": "20260701T022429"
+  },
+  {
+    "timestamp": "2026-07-01T02:24:30.526813+00:00",
+    "campaign_id": "camp_test",
+    "recommendations": [
+      "Use shorter subject lines"
+    ],
+    "deltas": {
+      "open_rate": -0.05
+    },
+    "priority": "high",
+    "snapshot_version": "20260701T022430"
+  },
+  {
+    "timestamp": "2026-07-01T02:25:00.451181+00:00",
+    "campaign_id": "camp_demo_001",
+    "recommendations": [
+      "Improve subject lines for open rate",
+      "Improve open_rate: underperformed by 7.00%",
+      "Improve reply_rate: underperformed by 3.00%"
+    ],
+    "deltas": {
+      "open_rate": -0.07,
+      "reply_rate": -0.03,
+      "conversion_rate": -0.01
+    },
+    "priority": "high",
+    "snapshot_version": "20260701T022500"
+  },
+  {
+    "timestamp": "2026-07-01T02:25:01.744796+00:00",
+    "campaign_id": "camp_test",
+    "recommendations": [
+      "Use shorter subject lines"
+    ],
+    "deltas": {
+      "open_rate": -0.05
+    },
+    "priority": "high",
+    "snapshot_version": "20260701T022501"
+  },
+  {
+    "timestamp": "2026-07-01T02:25:46.045313+00:00",
+    "campaign_id": "camp_demo_001",
+    "recommendations": [
+      "Improve subject lines for open rate",
+      "Improve open_rate: underperformed by 7.00%",
+      "Improve reply_rate: underperformed by 3.00%"
+    ],
+    "deltas": {
+      "open_rate": -0.07,
+      "reply_rate": -0.03,
+      "conversion_rate": -0.01
+    },
+    "priority": "high",
+    "snapshot_version": "20260701T022546"
+  },
+  {
+    "timestamp": "2026-07-01T02:25:47.268468+00:00",
+    "campaign_id": "camp_test",
+    "recommendations": [
+      "Use shorter subject lines"
+    ],
+    "deltas": {
+      "open_rate": -0.05
+    },
+    "priority": "high",
+    "snapshot_version": "20260701T022547"
+  },
+  {
+    "timestamp": "2026-07-01T02:26:48.549741+00:00",
+    "campaign_id": "camp_demo_001",
+    "recommendations": [
+      "Improve subject lines for open rate",
+      "Improve open_rate: underperformed by 7.00%",
+      "Improve reply_rate: underperformed by 3.00%"
+    ],
+    "deltas": {
+      "open_rate": -0.07,
+      "reply_rate": -0.03,
+      "conversion_rate": -0.01
+    },
+    "priority": "high",
+    "snapshot_version": "20260701T022648"
+  },
+  {
+    "timestamp": "2026-07-01T02:26:49.803876+00:00",
+    "campaign_id": "camp_test",
+    "recommendations": [
+      "Use shorter subject lines"
+    ],
+    "deltas": {
+      "open_rate": -0.05
+    },
+    "priority": "high",
+    "snapshot_version": "20260701T022649"
+  },
+  {
+    "timestamp": "2026-07-01T02:32:31.299864+00:00",
+    "campaign_id": "camp_demo_001",
+    "recommendations": [
+      "Improve subject lines for open rate",
+      "Improve open_rate: underperformed by 7.00%",
+      "Improve reply_rate: underperformed by 3.00%"
+    ],
+    "deltas": {
+      "open_rate": -0.07,
+      "reply_rate": -0.03,
+      "conversion_rate": -0.01
+    },
+    "priority": "high",
+    "snapshot_version": "20260701T023231"
+  },
+  {
+    "timestamp": "2026-07-01T02:32:34.980522+00:00",
+    "campaign_id": "camp_test",
+    "recommendations": [
+      "Use shorter subject lines"
+    ],
+    "deltas": {
+      "open_rate": -0.05
+    },
+    "priority": "high",
+    "snapshot_version": "20260701T023234"
   }
 ]

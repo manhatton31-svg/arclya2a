@@ -30,6 +30,8 @@ def test_multi_agent_handoff_chain_uses_xai(root, mock_xai):
         task_context="Write outreach email",
         revenue_usd=49.0,
         estimated_cost_usd=5.0,
+        auto_route=False,
+        chain=["outreach_worker", "profit_guardrail", "final_arbiter"],
     )
 
     assert not result.emergency_stop
@@ -62,6 +64,7 @@ def test_emergency_stop_records_cost(root, mock_xai):
         task_context="test",
         revenue_usd=10.0,
         estimated_cost_usd=9.8,
+        auto_route=False,
     )
     assert result.emergency_stop
     assert result.handoff_chain[-1]["status"] == "EMERGENCY_STOP"
@@ -92,6 +95,8 @@ def test_http_handoff_chain_endpoint(root, mock_xai):
             "task_context": "HTTP path test",
             "revenue_usd": 49.0,
             "estimated_cost_usd": 5.0,
+            "auto_route": False,
+            "onboarding_complete": True,
         },
     )
     assert resp.status_code == 200
@@ -101,12 +106,56 @@ def test_http_handoff_chain_endpoint(root, mock_xai):
     assert data["handoff_chain"][-1]["status"] == "COMPLETE"
 
 
+def test_auto_route_new_agent_to_onboarding(root, mock_xai):
+    orchestrator = Orchestrator(root, xai_client=mock_xai)
+    result = orchestrator.run_chain(
+        initial_ssot={"deal_id": "new1", "summary": "Brand new agent", "stage": "new", "metadata": {}},
+        task_context="Complete onboarding",
+        auto_route=True,
+    )
+    assert result.entry_agent == "onboarding_specialist"
+    assert result.handoff_chain[0]["agent_id"] == "onboarding_specialist"
+
+
+def test_auto_route_warm_lead_to_closer(root, mock_xai):
+    orchestrator = Orchestrator(root, xai_client=mock_xai)
+    ssot = {
+        "deal_id": "warm1",
+        "summary": "Warm lead",
+        "stage": "warm_lead",
+        "metadata": {
+            "onboarding_complete": True,
+            "product_profile_complete": True,
+            "lead_warmth": "warm",
+            "product_profile": {
+                "agent_name": "Warm Agent",
+                "product_name": "Product X",
+                "product_description": "Great tool",
+                "target_customer": "Founders",
+                "typical_deal_size": "$99",
+                "common_objections": ["Budget"],
+                "preferred_pricing_model": "subscription",
+                "accepts_crypto": False,
+                "destination_link": "https://example.com/buy",
+            },
+        },
+    }
+    result = orchestrator.run_chain(
+        initial_ssot=ssot,
+        task_context="Close this warm lead",
+        auto_route=True,
+    )
+    assert result.entry_agent == "closer"
+    assert result.handoff_chain[0]["agent_id"] == "closer"
+
+
 def test_no_api_key_records_failed_inference_cost(root):
     orchestrator = Orchestrator(root, xai_client=XAIClient(root, api_key=None))
     result = orchestrator.run_chain(
         chain=["outreach_worker"],
         initial_ssot={"deal_id": "d4", "summary": "No key", "stage": "new", "metadata": {}},
         task_context="test",
+        auto_route=False,
     )
     assert result.emergency_stop
     handoff = result.handoff_chain[0]

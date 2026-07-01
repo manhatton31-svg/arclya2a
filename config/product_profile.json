@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0.0",
+  "description": "Single source of truth for an onboarded agent's product and commercial profile. Collected by the Onboarding Specialist during A2A onboarding.",
+  "fields": {
+    "agent_name": { "type": "string", "required": true, "description": "Display name of the selling agent or agency" },
+    "product_name": { "type": "string", "required": true, "description": "Name of the product or service being sold" },
+    "product_description": { "type": "string", "required": true, "description": "Clear value proposition in 2-4 sentences" },
+    "target_customer": { "type": "string", "required": true, "description": "Ideal buyer persona (industry, size, role)" },
+    "typical_deal_size": { "type": "string", "required": true, "description": "Average contract value or price range" },
+    "common_objections": { "type": "array", "items": "string", "required": true, "description": "Top 3-5 objections and context" },
+    "preferred_pricing_model": { "type": "string", "required": true, "enum": ["subscription", "one_time", "usage_based", "hybrid", "custom"], "description": "How the agent prefers to price" },
+    "accepts_crypto": { "type": "boolean", "required": true, "description": "Whether crypto settlement is accepted" },
+    "destination_link": { "type": "string", "format": "uri", "required": true, "description": "Primary conversion URL (signup, checkout, calendar)" },
+    "affiliate_code": { "type": "string", "required": false, "description": "Tracking or referral code appended to destination_link" }
+  },
+  "profile": {
+    "agent_name": "",
+    "product_name": "",
+    "product_description": "",
+    "target_customer": "",
+    "typical_deal_size": "",
+    "common_objections": [],
+    "preferred_pricing_model": "",
+    "accepts_crypto": false,
+    "destination_link": "",
+    "affiliate_code": ""
+  },
+  "onboarding_status": "incomplete",
+  "completed_at": null
+}

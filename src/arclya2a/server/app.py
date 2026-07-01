@@ -61,6 +61,10 @@ class HandoffChainRequest(BaseModel):
     task_context: str = "Draft initial outreach for enterprise SaaS prospect"
     revenue_usd: float = 49.0
     estimated_cost_usd: float = 5.0
+    auto_route: bool = True
+    entry_agent: str | None = None
+    onboarding_complete: bool = False
+    lead_warmth: str = "cold"
 
 
 def create_app(root: Path | None = None, xai_client: XAIClient | None = None) -> FastAPI:
@@ -87,21 +91,31 @@ def create_app(root: Path | None = None, xai_client: XAIClient | None = None) ->
     @app.post("/orchestrate/handoff-chain")
     async def handoff_chain(req: HandoffChainRequest) -> dict[str, Any]:
         orchestrator = _orchestrator()
+        metadata: dict[str, Any] = {}
+        if req.onboarding_complete:
+            metadata["onboarding_complete"] = True
+            metadata["product_profile_complete"] = True
+        if req.lead_warmth:
+            metadata["lead_warmth"] = req.lead_warmth
+
         initial_ssot = {
             "deal_id": req.deal_id,
             "summary": f"New deal with {req.customer_company}",
             "customer": {"company": req.customer_company},
             "deal_value_usd": req.revenue_usd,
-            "stage": "new",
-            "metadata": {},
+            "stage": "warm_lead" if req.lead_warmth == "warm" else "new",
+            "metadata": metadata,
         }
         result = orchestrator.run_chain(
             initial_ssot=initial_ssot,
             task_context=req.task_context,
             revenue_usd=req.revenue_usd,
             estimated_cost_usd=req.estimated_cost_usd,
+            auto_route=req.auto_route,
+            entry_agent=req.entry_agent,
         )
         return {
+            "entry_agent": result.entry_agent,
             "handoff_chain": result.handoff_chain,
             "final_ssot": result.final_ssot,
             "audit_ids": result.audit_ids,
@@ -109,6 +123,25 @@ def create_app(root: Path | None = None, xai_client: XAIClient | None = None) ->
             "emergency_stop": result.emergency_stop,
             "uses_xai_inference": result.uses_xai_inference,
         }
+
+    @app.get("/orchestrate/route")
+    async def route_preview(
+        onboarding_complete: bool = False,
+        lead_warmth: str = "cold",
+    ) -> dict[str, str]:
+        orchestrator = _orchestrator()
+        ssot = {
+            "deal_id": "preview",
+            "summary": "Route preview",
+            "stage": "warm_lead" if lead_warmth == "warm" else "new",
+            "metadata": {
+                "onboarding_complete": onboarding_complete,
+                "product_profile_complete": onboarding_complete,
+                "lead_warmth": lead_warmth,
+            },
+        }
+        entry = orchestrator.route(ssot)
+        return {"entry_agent": entry}
 
     @app.post("/learning/campaign")
     async def campaign_learning() -> dict[str, Any]:

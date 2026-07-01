@@ -1,0 +1,18 @@
+{
+  "saved_at": "2026-07-01T02:32:32.953098+00:00",
+  "profile": {
+    "agent_name": "Test Agent",
+    "product_name": "Test Product",
+    "product_description": "A2A outreach tool",
+    "target_customer": "SaaS founders",
+    "typical_deal_size": "$49/mo",
+    "common_objections": [
+      "Price"
+    ],
+    "preferred_pricing_model": "subscription",
+    "accepts_crypto": false,
+    "destination_link": "https://example.com/signup",
+    "affiliate_code": "TEST123"
+  },
+  "onboarding_status": "complete"
+}

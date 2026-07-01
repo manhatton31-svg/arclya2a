@@ -2,6 +2,42 @@
   "version": "1.0.0",
   "agents": [
     {
+      "id": "onboarding_specialist",
+      "name": "Onboarding Specialist",
+      "role_card": "Collect a complete product profile from new agents via structured A2A onboarding. Hand off only when every required field is validated.",
+      "prompt_file": "onboarding_prompt.md",
+      "success_metrics": { "profile_completion_rate": 95, "field_accuracy": 90 },
+      "good_enough": "All product profile fields captured with confidence >= 80.",
+      "model_tier": "economy",
+      "error_policy": "retry_once_then_escalate",
+      "capabilities": ["onboarding", "product_profile_collection"],
+      "handoff_targets": ["profit_guardrail"]
+    },
+    {
+      "id": "recruiter",
+      "name": "A2A Recruiter",
+      "role_card": "Recruit complementary agents onto the platform with margin-aware, JSON-based partnership proposals. Never onboard or close deals.",
+      "prompt_file": "recruiter_prompt.md",
+      "success_metrics": { "invite_quality_score": 80, "a2a_compliance": true },
+      "good_enough": "One recruitment draft with A2A CTA and confidence >= 75.",
+      "model_tier": "economy",
+      "error_policy": "retry_once_then_escalate",
+      "capabilities": ["agent_recruitment", "a2a_acquisition"],
+      "handoff_targets": ["onboarding_specialist"]
+    },
+    {
+      "id": "closer",
+      "name": "A2A Closer",
+      "role_card": "Close warm leads agent-to-agent using the onboarded product profile, objection handlers, and destination link. Never skip guardrail handoff.",
+      "prompt_file": "closer_prompt.md",
+      "success_metrics": { "close_package_quality": 90, "objection_coverage": 100 },
+      "good_enough": "Close package with CTA, objection handling, confidence >= 85.",
+      "model_tier": "standard",
+      "error_policy": "reject_and_return",
+      "capabilities": ["a2a_closing", "objection_handling"],
+      "handoff_targets": ["profit_guardrail"]
+    },
+    {
       "id": "outreach_worker",
       "name": "Outreach Worker",
       "role_card": "Draft personalized cold outreach messages for qualified leads. Stop after producing a single validated draft; never send externally without handoff.",
