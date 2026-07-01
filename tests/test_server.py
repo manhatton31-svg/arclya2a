@@ -218,6 +218,10 @@ def test_landing_page(root):
     assert "Arclya A2A" in resp.text
     assert "lead routing" in resp.text.lower()
     assert "Pay with USDC" in resp.text
+    assert "Solana" in resp.text
+    assert "BSC" in resp.text
+    assert "payments/crypto/packages" in resp.text
+    assert "payments/crypto/checkout" in resp.text
 
 
 def test_onboarding_validate_endpoint_valid(root):

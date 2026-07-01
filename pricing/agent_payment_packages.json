@@ -1,0 +1,47 @@
+{
+  "version": "1.0.0",
+  "currency": "USDC",
+  "recommended_network": "base",
+  "packages": [
+    {
+      "id": "onboarding_package",
+      "name": "Onboarding Package",
+      "description": "Full seller onboarding with validated product profile, recruitment kickoff, and sandbox graduation path.",
+      "amount_usd": 49.0,
+      "billing": "one_time",
+      "includes": [
+        "product_profile_validation",
+        "handoff_chain_onboarding",
+        "partner_recruitment_start",
+        "sandbox_graduation_path"
+      ]
+    },
+    {
+      "id": "closer_access",
+      "name": "Closer Access",
+      "description": "Access to the AI Closer agent for agent-to-agent lead routing commitment closes with constitutional guardrails.",
+      "amount_usd": 99.0,
+      "billing": "per_session",
+      "includes": [
+        "closer_handoff",
+        "tool_execution",
+        "constitutional_guardrails",
+        "close_audit_trail"
+      ]
+    },
+    {
+      "id": "per_close",
+      "name": "Per Close",
+      "description": "Pay per successful lead routing commitment close with tracked CTA attribution.",
+      "amount_usd": 25.0,
+      "billing": "per_close",
+      "includes": [
+        "lead_routing_commitment",
+        "tracked_cta_attribution",
+        "success_based_settlement",
+        "close_audit_trail"
+      ],
+      "note": "Minimum per-close fee. Ongoing success-based billing may apply for recurring deals."
+    }
+  ]
+}

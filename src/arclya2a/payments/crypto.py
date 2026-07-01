@@ -615,9 +615,18 @@ def crypto_payments_summary(root: Path) -> dict[str, Any]:
     ]
     pending_review = [_review_row(p) for p in needs_review[:10]]
 
+    from arclya2a.payments.packages import list_payment_packages
+
+    packages = list_payment_packages(root)
     return {
         **cfg.to_public_dict(),
         "accepted_networks": list_accepted_crypto_networks(),
+        "agent_checkout": {
+            "packages_endpoint": "/payments/crypto/packages",
+            "checkout_endpoint": "/payments/crypto/checkout",
+            "package_count": len(packages),
+            "package_ids": [p.get("id") for p in packages if p.get("id")],
+        },
         "payment_count": len(payments),
         "intent_count": len(intents),
         "by_status": by_status,

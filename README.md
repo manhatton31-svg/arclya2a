@@ -25,9 +25,9 @@ Partnership model: [one-pager](docs/partnership-model-one-pager.md) · Outreach 
 | Close | Same endpoint with `lead_warmth: "warm"` after recruitment |
 | Monitor | `GET /health`, `GET /status` |
 | Rehearse | `python scripts/sandbox_partner_rehearsal.py` (full sandbox lifecycle + graduation report) |
-| Pay with USDC | `POST /payments/crypto/intent` → on-chain USDC → `POST /payments/crypto/{id}/submit` |
+| Pay with USDC | `GET /payments/crypto/packages` → `POST /payments/crypto/checkout` → on-chain USDC → submit `tx_hash` |
 
-Full guide: [docs/partner-integration-guide.md](docs/partner-integration-guide.md) · Checklist: [test-partner-onboarding-checklist.md](docs/test-partner-onboarding-checklist.md) · Crypto sales: [checklist § Pay with USDC](docs/test-partner-onboarding-checklist.md#pay-with-usdc--crypto-sales-first-10-sales)
+Full guide: [docs/partner-integration-guide.md](docs/partner-integration-guide.md) · **Agent payments:** [docs/agent-payments.md](docs/agent-payments.md) · Checklist: [test-partner-onboarding-checklist.md](docs/test-partner-onboarding-checklist.md)
 
 ## What Phase 1 Achieves
 

@@ -119,6 +119,34 @@ class CryptoPaymentIntentRequest(BaseModel):
     agent_id: str | None = Field(default=None, max_length=128)
     customer_ref: str | None = Field(default=None, max_length=256)
     memo: str | None = Field(default=None, max_length=256)
+    package: str | None = Field(
+        default=None,
+        max_length=64,
+        description="Optional package id for service attribution (onboarding_package, closer_access, per_close)",
+    )
+
+
+class CryptoPaymentCheckoutRequest(BaseModel):
+    """Payload for POST /payments/crypto/checkout — package-based self-service checkout."""
+
+    package: str | None = Field(
+        default=None,
+        max_length=64,
+        description="Package id: onboarding_package | closer_access | per_close",
+    )
+    service_type: str | None = Field(
+        default=None,
+        max_length=64,
+        description="Alias for package (onboarding, closer, per_close)",
+    )
+    network: str | None = Field(
+        default=None,
+        description="base | ethereum | solana | bnb (defaults to server config; Base recommended)",
+    )
+    partner_id: str | None = Field(default=None, max_length=128)
+    deal_id: str | None = Field(default=None, max_length=128)
+    agent_id: str | None = Field(default=None, max_length=128)
+    customer_ref: str | None = Field(default=None, max_length=256)
 
 
 class CryptoPaymentSubmitRequest(BaseModel):

@@ -23,6 +23,15 @@ LANDING_HTML = """<!DOCTYPE html>
            background: rgba(37,99,235,.08); border: 1px solid rgba(37,99,235,.25); }
     .cta h2 { margin-top: 0; font-size: 1.15rem; }
     .cta ol { margin-bottom: 0; }
+    .pay-grid { display: grid; gap: 1rem; margin: 1rem 0; }
+    @media (min-width: 40rem) {
+      .pay-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+    .pay-card { padding: 1rem; border-radius: 8px; border: 1px solid rgba(127,127,127,.25);
+                background: rgba(127,127,127,.06); }
+    .pay-card h3 { margin: 0 0 .35rem; font-size: 1rem; }
+    .pay-card .price { font-weight: 600; margin-bottom: .5rem; }
+    .pay-card ul { margin: .5rem 0 0; padding-left: 1.1rem; font-size: .92rem; }
   </style>
 </head>
 <body>
@@ -55,18 +64,67 @@ LANDING_HTML = """<!DOCTYPE html>
     </ul>
   </section>
 
-  <section>
+  <section class="cta">
     <h2>Pay with USDC</h2>
-    <p>Agents can pay for deals in <strong>USDC</strong> on Base, Ethereum, Solana, or BNB Chain.
-    Create a payment intent, send USDC on-chain, submit your <code>tx_hash</code>, and an operator confirms after verification.</p>
+    <p>External agents can purchase Arclya services in <strong>USDC</strong> — self-service checkout with
+    x402-compatible responses, on-chain proof submission, and operator confirmation.</p>
+
+    <h3>What you get</h3>
+    <div class="pay-grid">
+      <div class="pay-card">
+        <h3>Onboarding Package</h3>
+        <p class="price">$49 USDC</p>
+        <p>Validated product profile, recruitment kickoff, and sandbox graduation path.</p>
+        <ul>
+          <li>Product profile validation</li>
+          <li>Handoff-chain onboarding</li>
+          <li>Partner recruitment start</li>
+        </ul>
+      </div>
+      <div class="pay-card">
+        <h3>Closer Access</h3>
+        <p class="price">$99 USDC</p>
+        <p>AI Closer for agent-to-agent lead routing commitment closes.</p>
+        <ul>
+          <li>Closer handoff + tools</li>
+          <li>Constitutional guardrails</li>
+          <li>Close audit trail</li>
+        </ul>
+      </div>
+      <div class="pay-card">
+        <h3>Per Close</h3>
+        <p class="price">$25 USDC</p>
+        <p>Pay per successful lead routing commitment with tracked CTA attribution.</p>
+        <ul>
+          <li>Lead routing commitment</li>
+          <li>Tracked CTA attribution</li>
+          <li>Success-based settlement</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>Supported payment methods</h3>
+    <p>We accept <strong>USDC</strong> on all four networks below. Choose the chain where you hold funds.</p>
+    <ul>
+      <li><strong>Base</strong> — recommended (lowest fees, fastest settlement)</li>
+      <li><strong>Ethereum</strong> — ETH mainnet USDC</li>
+      <li><strong>Solana</strong> — SPL USDC</li>
+      <li><strong>BSC</strong> — BNB Smart Chain USDC</li>
+    </ul>
+    <p>Network wallets: <code>GET /payments/crypto/networks</code></p>
+
+    <h3>How to get started</h3>
     <ol>
-      <li>Create intent: <code>POST /payments/crypto/intent</code></li>
-      <li>Pay USDC to the wallet address in the response</li>
-      <li>Submit proof: <code>POST /payments/crypto/{payment_id}/submit</code></li>
-      <li>Operator confirms: <code>python scripts/confirm_crypto_payment.py --confirm ...</code></li>
+      <li>Discover packages: <code>GET /payments/crypto/packages</code></li>
+      <li>Start checkout: <code>POST /payments/crypto/checkout</code> with <code>{"package": "onboarding_package"}</code></li>
+      <li>Send USDC to the wallet in the response (exact amount, correct network)</li>
+      <li>Submit proof: <code>POST /payments/crypto/{payment_id}/submit</code> with <code>tx_hash</code></li>
+      <li>Poll status: <code>GET /payments/crypto/{payment_id}</code> (402 until confirmed, then 200)</li>
+      <li>Use your key to start the purchased service via <code>POST /orchestrate/handoff-chain</code></li>
     </ol>
-    <p>Networks: <code>GET /payments/crypto/networks</code> ·
-    Full guide: <a href="https://github.com/manhatton31-svg/arclya2a/blob/master/docs/test-partner-onboarding-checklist.md#pay-with-usdc--crypto-sales-first-10-sales">Crypto sales checklist</a></p>
+    <p>Custom amounts: <code>POST /payments/crypto/intent</code> ·
+    Agent Card: <a href="/.well-known/agent-card.json">/.well-known/agent-card.json</a> ·
+    Full guide: <a href="https://github.com/manhatton31-svg/arclya2a/blob/master/docs/agent-payments.md">Agent Payments Guide</a></p>
   </section>
 
   <section>

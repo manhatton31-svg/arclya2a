@@ -117,6 +117,7 @@ PUBLIC_PATHS = frozenset({
     "/.well-known/agent-card.json",
     "/tools",
     "/payments/crypto/networks",
+    "/payments/crypto/packages",
 })
 
 PROTECTED_PREFIXES = (

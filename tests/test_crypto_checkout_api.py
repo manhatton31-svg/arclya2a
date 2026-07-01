@@ -152,6 +152,69 @@ def test_list_networks(client):
     data = resp.json()
     assert data["enabled"] is True
     assert len(data["networks"]) == 4
+    network_ids = {n["network"] for n in data["networks"]}
+    assert network_ids == {"base", "ethereum", "solana", "bnb"}
+    assert "Base" in data["summary"]
+    assert "Solana" in data["summary"]
+    assert "BSC" in data["summary"]
+
+
+def test_list_packages(client):
+    resp = client.get("/payments/crypto/packages")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["enabled"] is True
+    assert len(data["packages"]) == 3
+    ids = {p["id"] for p in data["packages"]}
+    assert "onboarding_package" in ids
+    assert "closer_access" in ids
+    assert "per_close" in ids
+    assert data["checkout_url"].endswith("/payments/crypto/checkout")
+    assert "Solana" in data["summary"]
+
+
+def test_checkout_onboarding_package(client):
+    resp = client.post(
+        "/payments/crypto/checkout",
+        json={"package": "onboarding_package", "network": "base", "agent_id": "test_agent"},
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["payment_required"] is True
+    assert data["package"]["id"] == "onboarding_package"
+    assert data["package"]["amount_usd"] == 49.0
+    assert data["payment"]["amount"] == 49.0
+    assert data["payment"]["network"] == "base"
+    assert data["instructions"]["package_name"] == "Onboarding Package"
+    assert len(data["instructions"]["steps"]) >= 4
+    assert data["instructions"]["what_you_get"]
+
+
+def test_checkout_service_type_alias(client):
+    resp = client.post(
+        "/payments/crypto/checkout",
+        json={"service_type": "closer", "network": "solana"},
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["package"]["id"] == "closer_access"
+    assert data["payment"]["amount"] == 99.0
+    assert data["payment"]["network"] == "solana"
+
+
+def test_checkout_unknown_package_returns_400(client):
+    resp = client.post(
+        "/payments/crypto/checkout",
+        json={"package": "not_a_real_package"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "unknown_package"
+
+
+def test_checkout_missing_package_returns_400(client):
+    resp = client.post("/payments/crypto/checkout", json={})
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "missing_package"
 
 
 def test_confirm_payment_requires_operator_key(client):

@@ -22,10 +22,17 @@ def test_agent_card_schema():
     assert "crypto_payments" in card.get("platform", {}).get("features", [])
     assert card.get("endpoints", {}).get("crypto_intent")
     assert card.get("endpoints", {}).get("crypto_submit")
+    assert card.get("endpoints", {}).get("crypto_packages")
+    assert card.get("endpoints", {}).get("crypto_checkout")
     doc_rels = {d.get("rel") for d in card.get("documentation", [])}
     assert "crypto-intent" in doc_rels
+    assert "crypto-packages" in doc_rels
+    assert "crypto-checkout" in doc_rels
+    assert "agent-payments" in doc_rels
     assert "crypto-sales-guide" in doc_rels
     assert "first-crypto-sale-runbook" in doc_rels
+    assert "USDC" in card.get("description", "")
+    assert "Solana" in card.get("description", "")
 
 
 def test_agent_card_endpoint():

@@ -6,6 +6,16 @@ import json
 from pathlib import Path
 from typing import Any
 
+from arclya2a.payments.crypto import (
+    is_crypto_payments_configured,
+    is_crypto_payments_enabled,
+    list_accepted_crypto_networks,
+)
+from arclya2a.payments.packages import (
+    AGENT_PAYMENTS_DOC_URL,
+    build_agent_payments_discovery,
+)
+
 GITHUB_DOCS_BASE = "https://github.com/manhatton31-svg/arclya2a/blob/master/docs"
 
 
@@ -24,7 +34,45 @@ def build_agent_card(*, root: Path, base_url: str, version: str, platform_name: 
         for a in registry["agents"]
     ]
 
-    return {
+    payments_block: dict[str, Any] | None = None
+    if is_crypto_payments_configured():
+        networks = list_accepted_crypto_networks() if is_crypto_payments_enabled() else []
+        payments_block = build_agent_payments_discovery(
+            base_url=base_url,
+            networks=networks,
+            root=root,
+        )
+        payments_block["enabled"] = is_crypto_payments_enabled()
+
+    platform_block: dict[str, Any] = {
+        "phase": "1",
+        "close_type": "lead_routing_commitment",
+        "pricing_model": "success_based",
+        "billing": "pay_on_close_with_affiliate_attribution",
+        "features": [
+            "seller_onboarding",
+            "product_profile_validation",
+            "partner_recruitment",
+            "a2a_closing",
+            "tool_execution",
+            "constitutional_guardrails",
+            "success_based_billing",
+            "crypto_payments",
+            "usdc_checkout",
+            "background_learning_loop",
+            "prompt_patch_review",
+        ],
+        "lifecycle": ["onboarding", "recruitment", "close"],
+        "success_definition": (
+            "Partner agent commits to route warm leads to the seller's tracked destination_link "
+            "(destination_link + affiliate_code CTA). Deal closes on lead_routing_commitment, "
+            "not on signup or payment."
+        ),
+    }
+    if payments_block is not None:
+        platform_block["payments"] = payments_block
+
+    card: dict[str, Any] = {
         "name": platform_name,
         "description": (
             "Arclya A2A is a constitutional agent-to-agent platform for seller onboarding, "
@@ -32,7 +80,9 @@ def build_agent_card(*, root: Path, base_url: str, version: str, platform_name: 
             "validated product profile, recruit partner agents for warm leads, and close with "
             "tracked CTAs. Pricing is success-based (pay-on-close) with affiliate attribution. "
             "The Closer can execute Gmail, Linear, Calendar, and Notion tools. A background "
-            "learning loop analyzes execution data and applies safe prompt improvements."
+            "learning loop analyzes execution data and applies safe prompt improvements. "
+            "Agents can pay for services in USDC on Base, Ethereum, Solana, or BSC via "
+            "self-service package checkout (x402-compatible)."
         ),
         "url": base_url,
         "version": version,
@@ -43,31 +93,7 @@ def build_agent_card(*, root: Path, base_url: str, version: str, platform_name: 
         },
         "defaultInputModes": ["application/json", "text/plain"],
         "defaultOutputModes": ["application/json"],
-        "platform": {
-            "phase": "1",
-            "close_type": "lead_routing_commitment",
-            "pricing_model": "success_based",
-            "billing": "pay_on_close_with_affiliate_attribution",
-            "features": [
-                "seller_onboarding",
-                "product_profile_validation",
-                "partner_recruitment",
-                "a2a_closing",
-                "tool_execution",
-                "constitutional_guardrails",
-                "success_based_billing",
-                "crypto_payments",
-                "usdc_checkout",
-                "background_learning_loop",
-                "prompt_patch_review",
-            ],
-            "lifecycle": ["onboarding", "recruitment", "close"],
-            "success_definition": (
-                "Partner agent commits to route warm leads to the seller's tracked destination_link "
-                "(destination_link + affiliate_code CTA). Deal closes on lead_routing_commitment, "
-                "not on signup or payment."
-            ),
-        },
+        "platform": platform_block,
         "skills": skills,
         "authentication": {
             "type": "apiKey",
@@ -155,15 +181,33 @@ def build_agent_card(*, root: Path, base_url: str, version: str, platform_name: 
                 "href": f"{base_url}/partners/me/progress",
             },
             {
+                "rel": "agent-payments",
+                "type": "markdown",
+                "title": "Pay Arclya with USDC (agent self-service guide)",
+                "href": AGENT_PAYMENTS_DOC_URL,
+            },
+            {
                 "rel": "crypto-networks",
                 "type": "api",
                 "title": "List accepted USDC networks and receive addresses",
                 "href": f"{base_url}/payments/crypto/networks",
             },
             {
+                "rel": "crypto-packages",
+                "type": "api",
+                "title": "List USDC service packages (Onboarding, Closer Access, Per Close)",
+                "href": f"{base_url}/payments/crypto/packages",
+            },
+            {
+                "rel": "crypto-checkout",
+                "type": "api",
+                "title": "Create package-based USDC checkout with payment instructions",
+                "href": f"{base_url}/payments/crypto/checkout",
+            },
+            {
                 "rel": "crypto-intent",
                 "type": "api",
-                "title": "Create USDC payment intent (x402 checkout)",
+                "title": "Create USDC payment intent (custom amount, x402 checkout)",
                 "href": f"{base_url}/payments/crypto/intent",
             },
             {
@@ -196,8 +240,13 @@ def build_agent_card(*, root: Path, base_url: str, version: str, platform_name: 
             "billing_deals": f"{base_url}/billing/deals",
             "learning_run": f"{base_url}/learning/run",
             "crypto_networks": f"{base_url}/payments/crypto/networks",
+            "crypto_packages": f"{base_url}/payments/crypto/packages",
+            "crypto_checkout": f"{base_url}/payments/crypto/checkout",
             "crypto_intent": f"{base_url}/payments/crypto/intent",
             "crypto_submit": f"{base_url}/payments/crypto/{{payment_id}}/submit",
             "crypto_status": f"{base_url}/payments/crypto/{{payment_id}}",
         },
     }
+    if payments_block is not None:
+        card["payments"] = payments_block
+    return card

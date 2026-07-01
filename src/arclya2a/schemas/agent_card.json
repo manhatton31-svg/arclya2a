@@ -76,6 +76,10 @@
     "endpoints": {
       "type": "object",
       "additionalProperties": { "type": "string" }
+    },
+    "payments": {
+      "type": "object",
+      "description": "USDC checkout discovery for external agents"
     }
   }
 }
