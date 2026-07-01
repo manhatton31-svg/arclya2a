@@ -1,0 +1,21 @@
+{
+  "saved_at": "2026-07-01T02:33:58.086884+00:00",
+  "profile": {
+    "agent_name": "Save Test",
+    "product_name": "Product Z",
+    "product_description": "A complete agent-to-agent lead routing product for SaaS.",
+    "target_customer": "Agent operators",
+    "typical_deal_size": "$40/close",
+    "common_objections": [
+      "A",
+      "B",
+      "C"
+    ],
+    "preferred_pricing_model": "success_based",
+    "accepts_crypto": true,
+    "destination_link": "https://example.com/go",
+    "affiliate_code": "SAVE1"
+  },
+  "onboarding_status": "complete",
+  "cta_url": "https://example.com/go?ref=SAVE1"
+}

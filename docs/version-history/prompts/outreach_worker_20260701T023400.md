@@ -40,7 +40,5 @@ Draft only. No pricing, no QC, no external send.
 {{learned_context}}
 
 ## Learned Improvements (merged)
-- Improve subject lines for open rate
-- Improve open_rate: underperformed by 7.00%
-- Improve reply_rate: underperformed by 3.00%
+- Rollback test recommendation
 <!-- DYNAMIC_END -->

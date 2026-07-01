@@ -7,7 +7,12 @@ import re
 from pathlib import Path
 from typing import Any
 
-from arclya2a.config.product_profile import load_profile_snapshot, save_agent_profile, validate_product_profile
+from arclya2a.config.product_profile import (
+    build_destination_cta,
+    load_profile_snapshot,
+    save_agent_profile,
+    validate_product_profile,
+)
 from arclya2a.learning.campaign_loop import compute_deltas, build_recommendations
 from arclya2a.learning.prompt_updater import apply_learning_signal, load_learned_context, resolve_prompt_path
 from arclya2a.orchestrator.error_policy import (
@@ -285,15 +290,38 @@ def _validate_meta_optimizer(
 def _validate_onboarding_specialist(
     agent: dict[str, Any], handoff: dict[str, Any], root: Path, context: dict[str, Any]
 ) -> dict[str, Any]:
-    """Persist product profile to SSOT when onboarding completes."""
+    """Validate and persist product profile before marking onboarding complete."""
     payload = handoff.setdefault("payload", {})
     profile = payload.get("product_profile", {})
     complete_flag = payload.get("onboarding_complete", False)
     is_complete, missing = validate_product_profile(profile)
 
-    if complete_flag and is_complete:
+    if complete_flag and not is_complete:
+        payload["onboarding_complete"] = False
+        payload["missing_fields"] = missing
+        payload["validation_errors"] = missing
+        handoff["status"] = "COMPLETE"
+        handoff["next_action"] = "continue_onboarding"
+        handoff["validation"] = {
+            "confidence": 50,
+            "check": f"Profile incomplete; fix: {', '.join(missing)}",
+        }
+        handoff["ssot_updates"] = {
+            "stage": "onboarding_in_progress",
+            "metadata": {
+                "product_profile": profile,
+                "product_profile_complete": False,
+                "onboarding_complete": False,
+                "missing_fields": missing,
+            },
+        }
+        return handoff
+
+    if is_complete:
         agent_id = profile.get("agent_name", "unknown_agent").lower().replace(" ", "_")
         save_agent_profile(root, agent_id, profile)
+        payload["onboarding_complete"] = True
+        payload["missing_fields"] = []
         handoff["ssot_updates"] = handoff.get("ssot_updates") or {
             "stage": "onboarded",
             "summary": f"Onboarded: {profile.get('product_name', 'product')}",
@@ -302,12 +330,15 @@ def _validate_onboarding_specialist(
                 "product_profile_complete": True,
                 "onboarding_complete": True,
                 "onboarding_status": "complete",
+                "destination_cta": build_destination_cta(profile),
             },
         }
         targets = agent.get("handoff_targets", [])
         if handoff.get("status") == "COMPLETE" and targets:
             handoff["next_action"] = f"handoff_to_{targets[0]}"
-    elif not is_complete:
+    else:
+        payload["onboarding_complete"] = False
+        payload["missing_fields"] = missing
         handoff["ssot_updates"] = handoff.get("ssot_updates") or {
             "stage": "onboarding_in_progress",
             "metadata": {
@@ -339,12 +370,15 @@ def _validate_closer(
     close_pkg = handoff.get("payload", {}).get("close_package", {})
     profile = meta.get("product_profile", {})
     if close_pkg and profile:
-        close_pkg.setdefault("cta_url", profile.get("destination_link", ""))
-        if profile.get("affiliate_code"):
-            close_pkg["cta_url"] = f"{close_pkg['cta_url']}?ref={profile['affiliate_code']}"
+        cta = build_destination_cta(profile)
+        close_pkg["cta_url"] = cta
+        close_pkg["destination_link"] = profile.get("destination_link", "")
+        close_pkg["affiliate_code"] = profile.get("affiliate_code", "")
+        close_pkg.setdefault("pricing_model", "success_based_pay_on_close")
 
     if handoff.get("status") == "COMPLETE":
-        handoff["ssot_updates"] = handoff.get("ssot_updates") or {"stage": "close_package_ready"}
+        stage = "lead_routing_committed" if close_pkg.get("lead_routing_confirmed") else "close_package_ready"
+        handoff["ssot_updates"] = handoff.get("ssot_updates") or {"stage": stage}
 
     return handoff
 

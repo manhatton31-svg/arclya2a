@@ -317,5 +317,21 @@
     },
     "priority": "high",
     "snapshot_version": "20260701T023234"
+  },
+  {
+    "timestamp": "2026-07-01T02:34:00.511019+00:00",
+    "campaign_id": "camp_demo_001",
+    "recommendations": [
+      "Improve subject lines for open rate",
+      "Improve open_rate: underperformed by 7.00%",
+      "Improve reply_rate: underperformed by 3.00%"
+    ],
+    "deltas": {
+      "open_rate": -0.07,
+      "reply_rate": -0.03,
+      "conversion_rate": -0.01
+    },
+    "priority": "high",
+    "snapshot_version": "20260701T023400"
   }
 ]
