@@ -6,6 +6,7 @@ from typing import Any
 
 from arclya2a.agents.accounts import DEFAULT_DIRECTORY_SORT, VALID_DIRECTORY_SORTS
 from arclya2a.agents.email_delivery import SMTP_PROVIDER_EXAMPLES
+from arclya2a.agents.preferences import VALID_CLOSING_METHODS
 from arclya2a.agents.terms import TERMS_DOC_PATH, build_terms_info, current_terms_version
 
 GITHUB_DOCS_AGENT_ONBOARDING = (
@@ -23,7 +24,7 @@ SUGGESTED_CAPABILITIES = [
     "tool_use",
 ]
 
-GUIDE_VERSION = "1.8.0"
+GUIDE_VERSION = "1.9.0"
 
 GITHUB_DOCS_PRODUCTION_READINESS = (
     "https://github.com/manhatton31-svg/arclya2a/blob/master/docs/production-readiness-checklist.md"
@@ -53,6 +54,8 @@ def build_resource_links(base_url: str, *, agent_id: str | None = None) -> dict[
         "production_readiness": GITHUB_DOCS_PRODUCTION_READINESS,
         "landing_page": f"{base_url}/",
         "launch_smoke_test": "python scripts/launch_ready.py",
+        "preferences": f"{base_url}/agents/me/preferences",
+        "feedback": f"{base_url}/agents/feedback",
     }
     if agent_id:
         links["public_profile"] = f"{base_url}/agents/{agent_id}"
@@ -175,6 +178,41 @@ def build_post_registration_steps(base_url: str, *, agent_id: str) -> list[dict[
         },
         {
             "step": 9,
+            "id": "set_preferences",
+            "title": "Express feature preferences",
+            "description": (
+                "Tell us how you prefer to close deals — agent-only, human-assisted, or hybrid. "
+                "Preferences inform the product roadmap and Meta Optimizer learning loop."
+            ),
+            "priority": "low",
+            "method": "PATCH",
+            "url": f"{base_url}/agents/me/preferences",
+            "auth_required": True,
+            "body_example": {
+                "wants_human_closing": True,
+                "preferred_closing_method": "hybrid",
+            },
+        },
+        {
+            "step": 10,
+            "id": "submit_feedback",
+            "title": "Submit feedback (optional)",
+            "description": (
+                "Share structured feedback on features you want — including human closing support."
+            ),
+            "priority": "low",
+            "method": "POST",
+            "url": f"{base_url}/agents/feedback",
+            "auth_required": True,
+            "body_example": {
+                "category": "feature_request",
+                "feature_interest": "human_closing",
+                "wants_human_closing": True,
+                "message": "Interested in human-assisted lead routing closes for enterprise deals",
+            },
+        },
+        {
+            "step": 11,
             "id": "join_hangout",
             "title": "Join the Agent Hangout",
             "description": (
@@ -477,6 +515,19 @@ def build_agent_onboarding_guide(*, base_url: str | None = None) -> dict[str, An
                 "directory_sort": "trust_score_desc",
                 "guardrail_strictness": "reputation-informed confidence thresholds",
             },
+        },
+        "preferences_and_feedback": {
+            "preferences_endpoint": "PATCH /agents/me/preferences",
+            "feedback_endpoint": "POST /agents/feedback",
+            "closing_methods": sorted(VALID_CLOSING_METHODS),
+            "fields": {
+                "wants_human_closing": "boolean — interest in human-assisted closing",
+                "preferred_closing_method": "agent_only | human_only | hybrid",
+            },
+            "feedback_categories": ["feature_request", "closing_preference", "general", "bug_report"],
+            "learning_integration": "Signals flow to learning/agent_feedback_signals.jsonl and Meta Optimizer",
+            "operator_view": "GET /agents/operator/feedback (X-Arclya-Operator-Key)",
+            "ops_dashboard": "GET /ops/dashboard → agent_feedback section",
         },
         "agent_referral_program": {
             "discovery": "GET /agents/referrals/program",

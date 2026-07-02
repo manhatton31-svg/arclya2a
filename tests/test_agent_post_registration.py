@@ -34,7 +34,7 @@ def test_registration_includes_welcome_and_resources(isolated_accounts_root):
     assert data['api_key_reminder']['shown_once'] is True
     assert data['api_key_reminder']['importance'] == 'critical'
     assert 'cannot be retrieved' in data['api_key_reminder']['message']
-    assert len(data['next_steps']) == 9
+    assert len(data['next_steps']) == 11
     assert data['next_steps'][0]['id'] == 'accept_terms'
     assert data['next_steps'][0]['priority'] == 'critical'
     assert data['next_steps'][1]['id'] == 'store_api_key'
@@ -66,7 +66,7 @@ def test_onboarding_guide_includes_post_registration_flow(isolated_accounts_root
     assert guide['version'] == GUIDE_VERSION
     assert guide['post_registration'] is not None
     assert guide['post_registration']['title']
-    assert len(guide['post_registration']['steps']) == 9
+    assert len(guide['post_registration']['steps']) == 11
     assert 'agent_hangout' in guide
     assert guide['full_flow']['steps']
     assert guide['resources']['onboarding_guide'].endswith('/agents/onboarding/guide')

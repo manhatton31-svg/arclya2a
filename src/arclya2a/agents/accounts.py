@@ -520,6 +520,18 @@ def _resolve_directory_sort(
     return DEFAULT_DIRECTORY_SORT
 
 
+def _default_preferences() -> dict[str, Any]:
+    from arclya2a.agents.preferences import default_preferences
+
+    return default_preferences()
+
+
+def _account_preferences(account: dict[str, Any]) -> dict[str, Any]:
+    from arclya2a.agents.preferences import account_preferences
+
+    return account_preferences(account)
+
+
 def private_profile(account: dict[str, Any]) -> dict[str, Any]:
     """Authenticated profile view for GET /agents/me."""
     from arclya2a.agents.email_verification import build_email_verification_status
@@ -540,6 +552,8 @@ def private_profile(account: dict[str, Any]) -> dict[str, Any]:
         "terms_accepted_at": account.get("terms_accepted_at"),
         "terms_accepted": has_accepted_current_terms(account),
         "publicly_listed": bool(account.get("publicly_listed", False)),
+        "preferences": _account_preferences(account),
+        "preferences_updated_at": account.get("preferences_updated_at"),
     }
 
 
@@ -603,6 +617,7 @@ def register_agent_account(
         "email_verified_at": None,
         "terms_version": None,
         "terms_accepted_at": None,
+        "preferences": _default_preferences(),
     }
     from arclya2a.agents.terms import apply_terms_acceptance
 

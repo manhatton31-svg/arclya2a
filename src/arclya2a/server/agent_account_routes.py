@@ -41,11 +41,24 @@ from arclya2a.agents.audit import (
     log_agent_directory_listing_change,
     log_agent_api_key_rotated,
     log_agent_email_verified,
+    log_agent_feedback_submitted,
+    log_agent_preferences_updated,
     log_agent_profile_update,
     log_agent_registration,
     log_agent_status_change,
     log_agent_terms_accepted,
     read_agent_audit_events,
+)
+from arclya2a.agents.feedback import (
+    build_feedback_ops_summary,
+    list_agent_feedback,
+    submit_agent_feedback,
+    validate_feedback_input,
+)
+from arclya2a.agents.preferences import (
+    account_preferences,
+    update_agent_preferences,
+    validate_preferences_patch,
 )
 from arclya2a.agents.terms import build_terms_info
 from arclya2a.agents.email_verification import (
@@ -727,6 +740,145 @@ def register_agent_account_routes(router: APIRouter) -> None:
             "profile": private_profile(updated),
         }
 
+    @router.patch("/agents/me/preferences")
+    async def agents_me_preferences_update(request: Request) -> dict[str, Any]:
+        """Update feature preferences for the authenticated agent."""
+        account = _resolve_authenticated_account(request)
+        if not account:
+            return _agent_auth_error_response(request)
+        try:
+            body = await request.json()
+        except Exception:
+            return json_error(
+                code="validation_error",
+                message="Request body must be valid JSON",
+                status_code=422,
+            )
+        if not isinstance(body, dict):
+            return json_error(
+                code="validation_error",
+                message="Request body must be a JSON object",
+                status_code=422,
+            )
+
+        patch, err = validate_preferences_patch(body)
+        if err:
+            return json_error(
+                code="validation_error",
+                message=err,
+                details={
+                    "allowed_fields": ["wants_human_closing", "preferred_closing_method"],
+                    "closing_methods": ["agent_only", "human_only", "hybrid"],
+                },
+                status_code=422,
+            )
+        assert patch is not None
+
+        updated, changed, update_err = update_agent_preferences(
+            request.app.state.root,
+            account["agent_id"],
+            wants_human_closing=patch.get("wants_human_closing"),
+            preferred_closing_method=patch.get("preferred_closing_method"),
+        )
+        if update_err:
+            code = "validation_error"
+            status = 422
+            if update_err == "Agent account not found":
+                status = 404
+            elif update_err in {"Agent account is suspended", "Agent account is pending review"}:
+                code = "forbidden"
+                status = 403
+            return json_error(code=code, message=update_err, status_code=status)
+
+        client_ip = request.client.host if request.client else None
+        log_agent_preferences_updated(
+            request.app.state.root,
+            account=updated,
+            changed_fields=changed,
+            client_ip=client_ip,
+        )
+        return {
+            "updated": True,
+            "changed_fields": changed,
+            "preferences": account_preferences(updated),
+            "preferences_updated_at": updated.get("preferences_updated_at"),
+            "profile": private_profile(updated),
+        }
+
+    @router.post("/agents/feedback")
+    async def agents_submit_feedback(request: Request) -> dict[str, Any]:
+        """Submit structured feedback (feature interest, human closing, etc.)."""
+        account = _resolve_authenticated_account(request)
+        if not account:
+            return _agent_auth_error_response(request)
+        try:
+            body = await request.json()
+        except Exception:
+            return json_error(
+                code="validation_error",
+                message="Request body must be valid JSON",
+                status_code=422,
+            )
+        if not isinstance(body, dict):
+            return json_error(
+                code="validation_error",
+                message="Request body must be a JSON object",
+                status_code=422,
+            )
+
+        payload, err = validate_feedback_input(body)
+        if err:
+            return json_error(
+                code="validation_error",
+                message=err,
+                details={
+                    "categories": ["feature_request", "closing_preference", "general", "bug_report"],
+                    "feature_interests": [
+                        "human_closing", "deal_rooms", "marketplace", "referrals", "crypto_payments", "other",
+                    ],
+                },
+                status_code=422,
+            )
+        assert payload is not None
+
+        pref_body: dict[str, Any] = {}
+        if "wants_human_closing" in payload:
+            pref_body["wants_human_closing"] = payload["wants_human_closing"]
+        if payload.get("preferred_closing_method"):
+            pref_body["preferred_closing_method"] = payload["preferred_closing_method"]
+        if pref_body:
+            pref_patch, _ = validate_preferences_patch(pref_body)
+            if pref_patch:
+                update_agent_preferences(
+                    request.app.state.root,
+                    account["agent_id"],
+                    wants_human_closing=pref_patch.get("wants_human_closing"),
+                    preferred_closing_method=pref_patch.get("preferred_closing_method"),
+                )
+                account = get_agent_account(request.app.state.root, account["agent_id"]) or account
+
+        feedback = submit_agent_feedback(
+            request.app.state.root,
+            agent_id=account["agent_id"],
+            agent_name=account.get("agent_name"),
+            payload=payload,
+        )
+        client_ip = request.client.host if request.client else None
+        log_agent_feedback_submitted(
+            request.app.state.root,
+            account=account,
+            feedback=feedback,
+            client_ip=client_ip,
+        )
+        return {
+            "submitted": True,
+            "feedback_id": feedback.get("feedback_id"),
+            "category": feedback.get("category"),
+            "learning_signal_id": feedback.get("learning_signal_id"),
+            "message": "Thank you — your feedback was recorded and sent to the learning system",
+            "preferences": account_preferences(account),
+        }
+
     @router.patch("/agents/me")
     async def agents_me_update(request: Request) -> dict[str, Any]:
         """Update basic profile fields for the authenticated agent."""
@@ -981,6 +1133,28 @@ def register_agent_account_routes(router: APIRouter) -> None:
                 "it is shown only in this response."
             ),
             "agent": operator_agent_entry(updated),
+        }
+
+    @router.get("/agents/operator/feedback")
+    async def agents_operator_feedback(
+        request: Request,
+        agent_id: str | None = Query(default=None),
+        limit: int = Query(default=25, ge=1, le=100),
+    ) -> dict[str, Any]:
+        """Operator-only: agent feedback and preference summary."""
+        denied = _require_operator(request)
+        if denied:
+            return denied
+        summary = build_feedback_ops_summary(request.app.state.root)
+        entries = list_agent_feedback(
+            request.app.state.root,
+            limit=limit,
+            agent_id=agent_id,
+        )
+        return {
+            "summary": summary,
+            "entries": entries,
+            "agent_id_filter": agent_id,
         }
 
     @router.get("/agents/operator/verification-outbox")

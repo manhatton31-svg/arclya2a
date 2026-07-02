@@ -260,22 +260,27 @@ def build_execution_learning_context(
     demo_report: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Aggregate all execution data sources for Meta Optimizer."""
+    from arclya2a.agents.feedback import analyze_agent_feedback
+
     tool_analysis = analyze_tool_executions(root)
     billing_analysis = analyze_billing_data(root)
     demo_analysis = analyze_demo_phases(demo_report) if demo_report else {"issues": [], "recommendations": [], "prompt_targets": [], "phase_results": {}}
     negotiation_analysis = analyze_negotiation_effectiveness(demo_report) if demo_report else {"issues": [], "recommendations": []}
+    feedback_analysis = analyze_agent_feedback(root)
 
     all_issues = list(dict.fromkeys(
         tool_analysis.get("issues", [])
         + billing_analysis.get("issues", [])
         + demo_analysis.get("issues", [])
         + negotiation_analysis.get("issues", [])
+        + feedback_analysis.get("issues", [])
     ))
     all_recs = list(dict.fromkeys(
         tool_analysis.get("recommendations", [])
         + billing_analysis.get("recommendations", [])
         + demo_analysis.get("recommendations", [])
         + negotiation_analysis.get("recommendations", [])
+        + feedback_analysis.get("recommendations", [])
     ))
     prompt_targets = list(dict.fromkeys(demo_analysis.get("prompt_targets", [])))
 
@@ -285,6 +290,8 @@ def build_execution_learning_context(
         "onboarding_incomplete", "demo_tool_failures",
     )):
         priority = "high"
+    elif "agent_demand_human_closing" in all_issues:
+        priority = "medium"
     elif all_issues:
         priority = "medium"
 
@@ -308,6 +315,7 @@ def build_execution_learning_context(
         "billing": billing_analysis,
         "demo_phases": demo_analysis.get("phase_results", {}),
         "negotiation": negotiation_analysis,
+        "agent_feedback": feedback_analysis,
         "issues_detected": all_issues,
         "recommendations": all_recs,
         "prompt_targets": prompt_targets or [primary_target],

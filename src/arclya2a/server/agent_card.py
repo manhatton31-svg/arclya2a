@@ -13,6 +13,7 @@ from arclya2a.payments.crypto import (
 )
 from arclya2a.agents.accounts import DEFAULT_DIRECTORY_SORT, VALID_DIRECTORY_SORTS, count_agent_accounts
 from arclya2a.agents.email_delivery import SMTP_PROVIDER_EXAMPLES, effective_email_delivery_mode
+from arclya2a.agents.preferences import VALID_CLOSING_METHODS
 from arclya2a.agents.email_verification import directory_requires_email_verification
 from arclya2a.agents.security import (
     DIRECTORY_MAX_CAPABILITY_FILTERS,
@@ -104,6 +105,8 @@ def build_agent_card(*, root: Path, base_url: str, version: str, platform_name: 
             "agent_action_audit",
             "agent_operator_moderation",
             "agent_email_verification",
+            "agent_preferences",
+            "agent_feedback",
             "agent_api_key_rotation",
             "agent_terms_acceptance",
             "agent_public_profiles",
@@ -242,6 +245,8 @@ def build_agent_card(*, root: Path, base_url: str, version: str, platform_name: 
                 "agent_api_key_rotated",
                 "agent_terms_accepted",
                 "agent_hangout_activity",
+                "agent_preferences_updated",
+                "agent_feedback_submitted",
             ],
             "suspicious_activity_detection": True,
         },
@@ -307,6 +312,25 @@ def build_agent_card(*, root: Path, base_url: str, version: str, platform_name: 
             "deferred": "POST /payments/crypto/x402/deferred",
             "batch_settle": "POST /payments/crypto/x402/batch-settle",
             "schemes": ["exact", "deferred", "batch"],
+        },
+        "agent_preferences": {
+            "endpoint": "PATCH /agents/me/preferences",
+            "profile_field": "preferences",
+            "fields": {
+                "wants_human_closing": "boolean",
+                "preferred_closing_method": sorted(VALID_CLOSING_METHODS),
+            },
+            "defaults": {"wants_human_closing": False, "preferred_closing_method": "agent_only"},
+            "learning_integration": "Aggregated in Meta Optimizer via agent_feedback signals",
+        },
+        "agent_feedback": {
+            "endpoint": "POST /agents/feedback",
+            "auth_required": True,
+            "categories": ["feature_request", "closing_preference", "general", "bug_report"],
+            "feature_interests": ["human_closing", "deal_rooms", "marketplace", "referrals", "crypto_payments", "other"],
+            "operator_endpoint": "GET /agents/operator/feedback",
+            "ops_dashboard_section": "agent_feedback",
+            "learning_signals": "learning/agent_feedback_signals.jsonl",
         },
         "agent_referral_program": {
             "enabled": True,

@@ -20,6 +20,8 @@ def build_ops_dashboard(root: Path) -> dict[str, Any]:
     patches = build_patch_dashboard(root)
     security = build_security_metrics(root)
     partners = build_partner_funnel_metrics(root)
+    from arclya2a.agents.feedback import build_feedback_ops_summary
+
     agent_audit = build_agent_audit_summary(root)
     agent_management = build_agent_management_summary(root)
     agent_audit["management"] = agent_management
@@ -63,6 +65,7 @@ def build_ops_dashboard(root: Path) -> dict[str, Any]:
         "security": security,
         "partners": partners,
         "agents": agent_audit,
+        "agent_feedback": build_feedback_ops_summary(root),
         "payments": ops.get("payments", {}),
         "server_events": server_events,
     }
@@ -215,6 +218,25 @@ def format_ops_dashboard_text(dashboard: dict[str, Any]) -> str:
                 f"    [{e.get('event_type', '?'):28}] "
                 f"agent={e.get('agent_id') or '-':14} "
                 f"suspicious={bool(e.get('suspicious'))}"
+            )
+
+    feedback = dashboard.get("agent_feedback", {})
+    if feedback:
+        prefs = feedback.get("preferences") or {}
+        lines.extend([
+            "",
+            "── Agent Feedback & Preferences ──",
+            f"  Total feedback:        {feedback.get('total_feedback', 0)}",
+            f"  Recent (7d):           {feedback.get('recent_7d', 0)}",
+            f"  Human closing interest:{feedback.get('human_closing_interest', 0)}",
+            f"  Wants human closing:   {prefs.get('wants_human_closing_count', 0)}",
+            f"  By closing method:     {prefs.get('by_preferred_closing_method', {})}",
+        ])
+        for fb in feedback.get("recent_feedback", [])[:3]:
+            lines.append(
+                f"    [{fb.get('category', '?'):18}] "
+                f"agent={fb.get('agent_id', '-'):14} "
+                f"interest={fb.get('feature_interest') or '-'}"
             )
 
     partners = dashboard.get("partners", {})

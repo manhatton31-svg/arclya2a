@@ -23,6 +23,8 @@ EVENT_EMAIL_VERIFIED = "agent_email_verified"
 EVENT_API_KEY_ROTATED = "agent_api_key_rotated"
 EVENT_TERMS_ACCEPTED = "agent_terms_accepted"
 EVENT_HANGOUT_ACTIVITY = "agent_hangout_activity"
+EVENT_PREFERENCES_UPDATED = "agent_preferences_updated"
+EVENT_FEEDBACK_SUBMITTED = "agent_feedback_submitted"
 
 DIRECTORY_EVENT_TYPES = frozenset({
     EVENT_DIRECTORY_SEARCH,
@@ -49,6 +51,8 @@ ALL_EVENT_TYPES = frozenset({
     EVENT_API_KEY_ROTATED,
     EVENT_TERMS_ACCEPTED,
     EVENT_HANGOUT_ACTIVITY,
+    EVENT_PREFERENCES_UPDATED,
+    EVENT_FEEDBACK_SUBMITTED,
 })
 
 
@@ -453,6 +457,56 @@ def log_agent_directory_activity(
             "pagination": filters.get("pagination"),
             "result_count": result_count,
             "total_matches": total,
+        },
+    )
+
+
+def log_agent_preferences_updated(
+    root: Path,
+    *,
+    account: dict[str, Any],
+    changed_fields: list[str],
+    client_ip: str | None = None,
+) -> dict[str, Any]:
+    from arclya2a.agents.preferences import account_preferences
+
+    return log_agent_audit(
+        root,
+        event_type=EVENT_PREFERENCES_UPDATED,
+        agent_id=account.get("agent_id"),
+        client_ip=client_ip,
+        path="/agents/me/preferences",
+        method="PATCH",
+        details={
+            "agent_name": account.get("agent_name"),
+            "changed_fields": changed_fields,
+            "preferences": account_preferences(account),
+        },
+    )
+
+
+def log_agent_feedback_submitted(
+    root: Path,
+    *,
+    account: dict[str, Any],
+    feedback: dict[str, Any],
+    client_ip: str | None = None,
+) -> dict[str, Any]:
+    return log_agent_audit(
+        root,
+        event_type=EVENT_FEEDBACK_SUBMITTED,
+        agent_id=account.get("agent_id"),
+        client_ip=client_ip,
+        path="/agents/feedback",
+        method="POST",
+        details={
+            "agent_name": account.get("agent_name"),
+            "feedback_id": feedback.get("feedback_id"),
+            "category": feedback.get("category"),
+            "feature_interest": feedback.get("feature_interest"),
+            "wants_human_closing": feedback.get("wants_human_closing"),
+            "preferred_closing_method": feedback.get("preferred_closing_method"),
+            "rating": feedback.get("rating"),
         },
     )
 

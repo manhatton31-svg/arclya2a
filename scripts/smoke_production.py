@@ -64,7 +64,7 @@ def main() -> int:
 
         r = client.get(f"{BASE}/agents/onboarding/guide")
         guide = r.json() if r.status_code == 200 else {}
-        check("onboarding guide v1.8.0", r.status_code == 200 and guide.get("version") == "1.8.0")
+        check("onboarding guide v1.9.0", r.status_code == 200 and guide.get("version") == "1.9.0")
 
     failed = [c for c in checks if not c[1]]
     print("---")
