@@ -12,6 +12,7 @@ from arclya2a.payments.crypto import (
     list_accepted_crypto_networks,
 )
 from arclya2a.agents.accounts import DEFAULT_DIRECTORY_SORT, VALID_DIRECTORY_SORTS, count_agent_accounts
+from arclya2a.agents.email_delivery import SMTP_PROVIDER_EXAMPLES, effective_email_delivery_mode
 from arclya2a.agents.email_verification import directory_requires_email_verification
 from arclya2a.agents.security import (
     DIRECTORY_MAX_CAPABILITY_FILTERS,
@@ -167,6 +168,9 @@ def build_agent_card(*, root: Path, base_url: str, version: str, platform_name: 
                 "outbox": "Dev/CI — log only, no SMTP send",
             },
             "public_url_for_links": "ARCLYA_PUBLIC_URL or RENDER_EXTERNAL_URL",
+            "delivery_mode_effective": effective_email_delivery_mode(),
+            "smtp_providers": SMTP_PROVIDER_EXAMPLES,
+            "launch_smoke_test": "python scripts/launch_ready.py",
         },
         "agent_terms_acceptance": {
             "current_version": current_terms_version(),
@@ -322,6 +326,9 @@ def build_agent_card(*, root: Path, base_url: str, version: str, platform_name: 
             "algorithm": "HS256",
         },
         "external_agents": {
+            "launch_status": "open",
+            "registration_open": True,
+            "production_base_url": public_base,
             "registration": "POST /agents/register",
             "registration_requires_terms": True,
             "accept_fields": ["terms_accepted", "accept_terms"],

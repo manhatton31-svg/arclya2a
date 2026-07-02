@@ -93,21 +93,21 @@ Use this checklist before pointing a custom domain at the Arclya external agent 
 # 1. Full test suite
 python -m pytest tests/ -q
 
-# 2. Confirm public URL
+# 2. Endpoint smoke (features live)
+python scripts/smoke_production.py
+
+# 3. Full external agent flow (register → verify → profile → directory)
+ARCLYA_OPERATOR_KEY=your_key python scripts/launch_ready.py
+
+# 4. Confirm public URL
 curl -s https://your-domain/.well-known/agent-card.json | jq '.url, .platform.public_url_source'
 
-# 3. External agent flow
-curl -s https://your-domain/agents/terms | jq '.version'
-# POST /agents/register with accept_terms: true
-# Verify email → PATCH /agents/me publicly_listed: true
-# GET /agents/directory
-
-# 4. Seller lifecycle (authenticated)
+# 5. Seller lifecycle (authenticated)
 # POST /onboarding/validate → POST /orchestrate/handoff-chain (onboarding → recruit → close)
 
-# 5. Platform status
+# 6. Platform status
 curl -s https://your-domain/platform/status   # HTML
-curl -s https://your-domain/status | jq '.platform_summary'
+curl -s https://your-domain/status | jq '.platform_summary, .launch_readiness'
 ```
 
 ### Production Readiness Tracker (before custom domain)
@@ -120,13 +120,44 @@ curl -s https://your-domain/status | jq '.platform_summary'
 | Seller Constitution | Very Strong | ~95% |
 | Crypto / x402 Payments | Strong | ~92% |
 | Operational Monitoring | Ready | `/status` + `component_health` + HTML status page |
-| Production Email Delivery | Ready (code) | Set SMTP secrets on Render → `launch_ready: true` |
+| Production Email Delivery | Wired (SMTP) | Set Render SMTP secrets → `component_health.email.status: healthy` |
+| Launch Smoke Test | Ready | `python scripts/launch_ready.py` (full register→verify→directory) |
 | Custom Domain Support | Ready | DNS + `ARCLYA_PUBLIC_URL` only |
-| **Overall launch readiness** | **~99%** | Pending: Render SMTP secrets, DNS, uptime alerts |
+| **Overall launch readiness** | **~99%** | Pending: Render SMTP + operator secrets, DNS, uptime alerts |
 
 ## Production secrets & configuration guide
 
 Use this section when preparing Render (or any host) for custom-domain launch. **Never commit secrets** — set them in the Render Environment tab or your host's secret store.
+
+### Exact steps on Render
+
+1. Open [Render Dashboard](https://dashboard.render.com) → your **arclya2a** web service.
+2. Go to **Environment** (left sidebar).
+3. Add or update each variable below. Use **Add Secret** for keys and SMTP passwords.
+4. Click **Save Changes** — Render redeploys automatically.
+5. After deploy completes, verify:
+   ```bash
+   curl -s https://arclya2a.onrender.com/status | jq '.component_health.email, .launch_readiness'
+   ```
+6. Run the launch smoke test (set operator key locally, not on Render):
+   ```bash
+   set ARCLYA_OPERATOR_KEY=your_operator_key
+   python scripts/launch_ready.py
+   ```
+
+| Render variable | Where to get it | Example |
+|-----------------|-----------------|---------|
+| `ARCLYA_API_KEY` | Render auto-generates on first deploy (blueprint) or create a long random string | `arclya_…` (32+ chars) |
+| `ARCLYA_OPERATOR_KEY` | Generate: `python -c "import secrets; print(secrets.token_urlsafe(32))"` | Never share with external agents |
+| `XAI_API_KEY` | [xAI Console](https://console.x.ai) → API Keys | `xai-…` |
+| `ARCLYA_AGENT_EMAIL_DELIVERY` | Set manually | `auto` |
+| `ARCLYA_AGENT_EMAIL_SMTP_URL` | Your email provider SMTP credentials (see examples below) | `smtp://apikey:SG.xxx@smtp.sendgrid.net:587` |
+| `ARCLYA_AGENT_EMAIL_FROM` | Verified sender domain in your provider | `noreply@yourdomain.com` |
+| `ARCLYA_PUBLIC_URL` | Your canonical URL (custom domain or Render URL until DNS is ready) | `https://arclya2a.onrender.com` or `https://agents.yourdomain.com` |
+| `ARCLYA_CRYPTO_ENABLED` | Optional — set `1` to enable USDC checkout | `1` |
+| `ARCLYA_CRYPTO_WALLET_BASE` | Your USDC receive address (public only) | `0x…` |
+
+**Optional crypto wallets** (set each chain you accept): `ARCLYA_CRYPTO_WALLET_ETHEREUM`, `ARCLYA_CRYPTO_WALLET_SOLANA`, `ARCLYA_CRYPTO_WALLET_BNB`.
 
 ### Launch setup order
 
@@ -139,8 +170,9 @@ Use this section when preparing Render (or any host) for custom-domain launch. *
 | 5 | Set **crypto wallet** vars (if accepting USDC) | `/status` → `component_health.crypto.status: healthy` |
 | 6 | Set `ARCLYA_PUBLIC_URL` to your custom domain | Agent Card `url` matches domain |
 | 7 | Point DNS + enable TLS | `curl https://your-domain/health` |
-| 8 | Run pre-launch smoke tests (below) | `launch_readiness.ready: true` on `/status` |
-| 9 | Wire uptime monitoring | Alert when `status` is `degraded` |
+| 8 | Run `python scripts/launch_ready.py` | Full register→verify→profile→directory flow passes |
+| 9 | Confirm `launch_readiness.ready: true` on `/status` | Email + crypto component health green |
+| 10 | Wire uptime monitoring | Alert when `status` is `degraded` |
 
 ### Required secrets (Render environment)
 
@@ -163,7 +195,7 @@ Verification emails use the canonical public URL (`ARCLYA_PUBLIC_URL` → `RENDE
 | `ARCLYA_AGENT_REQUIRE_EMAIL_VERIFICATION` | `true` | Keep enabled for directory opt-in |
 | `ARCLYA_AGENT_EMAIL_VERIFICATION_HOURS` | `24` | Token expiry (24–48h typical) |
 
-**SendGrid example (Render):**
+**SendGrid (Render):**
 
 ```bash
 ARCLYA_AGENT_EMAIL_DELIVERY=auto
@@ -172,7 +204,46 @@ ARCLYA_AGENT_EMAIL_FROM=noreply@yourdomain.com
 ARCLYA_PUBLIC_URL=https://agents.yourdomain.com
 ```
 
+**Resend (Render):**
+
+```bash
+ARCLYA_AGENT_EMAIL_SMTP_URL=smtp://resend:re_xxxx@smtp.resend.com:587
+ARCLYA_AGENT_EMAIL_FROM=onboarding@yourdomain.com
+```
+
+**Mailgun (Render):**
+
+```bash
+ARCLYA_AGENT_EMAIL_SMTP_URL=smtp://postmaster@mg.yourdomain.com:xxxx@smtp.mailgun.org:587
+ARCLYA_AGENT_EMAIL_FROM=noreply@yourdomain.com
+```
+
+**Standard SMTP (any host):**
+
+```bash
+ARCLYA_AGENT_EMAIL_SMTP_URL=smtp://user:password@mail.yourdomain.com:587
+# or implicit TLS:
+ARCLYA_AGENT_EMAIL_SMTP_URL=smtps://user:password@mail.yourdomain.com:465
+```
+
+Verification emails include a clickable link using `ARCLYA_PUBLIC_URL` (or `RENDER_EXTERNAL_URL` until custom domain is set).
+
 **Dev/CI:** `ARCLYA_AGENT_EMAIL_DELIVERY=outbox` — tokens readable from `data/agent_accounts/verification_outbox.jsonl`.
+
+**Launch smoke test (production):**
+
+```bash
+ARCLYA_OPERATOR_KEY=your_operator_key python scripts/launch_ready.py
+# Custom domain:
+ARCLYA_BASE_URL=https://agents.yourdomain.com ARCLYA_OPERATOR_KEY=... python scripts/launch_ready.py
+```
+
+Operator support endpoint (returns latest verification token/link for launch testing):
+
+```bash
+curl -s -H "X-Arclya-Operator-Key: $ARCLYA_OPERATOR_KEY" \
+  "https://arclya2a.onrender.com/agents/operator/verification-outbox?agent_id=ag_xxx"
+```
 
 ### Crypto checkout (optional but recommended)
 

@@ -15,7 +15,11 @@ from arclya2a.agents.email_delivery import (
     parse_smtp_url,
     send_smtp_message,
 )
-from arclya2a.agents.email_verification import read_outbox_entries, send_verification_email
+from arclya2a.agents.email_verification import (
+    build_verification_email_content,
+    read_outbox_entries,
+    send_verification_email,
+)
 from arclya2a.server.app import create_app
 from tests.agent_helpers import registration_payload
 
@@ -125,6 +129,39 @@ def test_registration_smtp_mode_via_http(isolated_root, monkeypatch):
         assert outbox["delivery"] == "smtp"
         assert "launch.arclya.example" in outbox["verify_link"]
         smtp_instance.send_message.assert_called_once()
+
+
+def test_verification_email_includes_clean_link(isolated_root):
+    plain, html = build_verification_email_content(
+        agent_name="Test Agent",
+        verify_link="https://agents.example.com/agents/verify-email?token=ev_abc",
+        token="ev_abc",
+        base_url="https://agents.example.com",
+        hours=24,
+    )
+    assert "https://agents.example.com/agents/verify-email?token=ev_abc" in plain
+    assert "Verify email" in html
+    assert "ev_abc" in plain
+
+
+@patch("arclya2a.agents.email_delivery.smtplib.SMTP")
+def test_smtp_sends_multipart_html(mock_smtp, isolated_root, monkeypatch):
+    monkeypatch.setenv("ARCLYA_AGENT_EMAIL_DELIVERY", "smtp")
+    monkeypatch.setenv("ARCLYA_AGENT_EMAIL_SMTP_URL", "smtp://user:pass@localhost:587")
+    monkeypatch.setenv("ARCLYA_AGENT_EMAIL_FROM", "noreply@arclya.example")
+
+    smtp_instance = MagicMock()
+    mock_smtp.return_value.__enter__.return_value = smtp_instance
+
+    account = {"agent_id": "ag_html", "agent_name": "Html", "email": "html@example.com"}
+    send_verification_email(
+        isolated_root,
+        account=account,
+        token="ev_htmltoken",
+        base_url="https://launch.arclya.example",
+    )
+    sent = smtp_instance.send_message.call_args[0][0]
+    assert sent.get_content_type() == "multipart/alternative"
 
 
 def test_smtp_failure_returns_sent_false(isolated_root, monkeypatch):

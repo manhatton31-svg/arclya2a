@@ -51,6 +51,7 @@ from arclya2a.agents.terms import build_terms_info
 from arclya2a.agents.email_verification import (
     build_email_verification_status,
     directory_requires_email_verification,
+    operator_verification_outbox_summary,
     queue_agent_email_verification,
     verify_email_token,
 )
@@ -980,6 +981,39 @@ def register_agent_account_routes(router: APIRouter) -> None:
                 "it is shown only in this response."
             ),
             "agent": operator_agent_entry(updated),
+        }
+
+    @router.get("/agents/operator/verification-outbox")
+    async def agents_operator_verification_outbox(
+        request: Request,
+        agent_id: str | None = Query(default=None),
+        limit: int = Query(default=5, ge=1, le=20),
+    ) -> dict[str, Any]:
+        """Operator-only: recent verification email outbox (launch testing / support)."""
+        denied = _require_operator(request)
+        if denied:
+            return denied
+        if agent_id and not is_valid_agent_id(agent_id):
+            return json_error(
+                code="not_found",
+                message="Agent account not found",
+                status_code=404,
+            )
+        summary = operator_verification_outbox_summary(
+            request.app.state.root,
+            agent_id=agent_id,
+            limit=limit,
+        )
+        latest = summary.get("latest")
+        return {
+            "agent_id": agent_id,
+            "count": summary["count"],
+            "latest": latest,
+            "entries": summary["entries"],
+            "hint": (
+                "Use latest.verify_link or latest.token for POST /agents/verify-email "
+                "during launch smoke tests"
+            ),
         }
 
     @router.patch("/agents/{agent_id}/status")

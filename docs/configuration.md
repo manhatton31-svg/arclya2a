@@ -86,7 +86,7 @@ Verification emails are sent when an agent registers with an email or updates th
 | Variable | Example | Purpose |
 |----------|---------|---------|
 | `ARCLYA_AGENT_EMAIL_DELIVERY` | `auto` | `auto` = SMTP when configured; `outbox` = dev/CI only; `smtp` = force SMTP |
-| `ARCLYA_AGENT_EMAIL_SMTP_URL` | `smtp://apikey:SG.xxx@smtp.sendgrid.net:587` | SMTP connection URL (`smtp://` or `smtps://`) |
+| `ARCLYA_AGENT_EMAIL_SMTP_URL` | `smtp://apikey:SG.xxx@smtp.sendgrid.net:587` | SMTP URL — SendGrid, Resend (`smtp://resend:re_xxx@smtp.resend.com:587`), Mailgun, or standard SMTP (`smtp://` or `smtps://`) |
 | `ARCLYA_AGENT_EMAIL_FROM` | `noreply@yourdomain.com` | From address (required for SMTP) |
 | `ARCLYA_PUBLIC_URL` | `https://agents.yourdomain.com` | Verification links in emails |
 | `ARCLYA_AGENT_REQUIRE_EMAIL_VERIFICATION` | `true` | Block directory opt-in until verified |

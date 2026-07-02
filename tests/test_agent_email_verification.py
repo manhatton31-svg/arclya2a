@@ -248,6 +248,33 @@ def test_agent_card_advertises_email_verification(isolated_accounts_root):
     assert ev["required_for_directory"] is True
     assert ev["verify_endpoint"] == "POST /agents/verify-email"
     assert ev["resend_endpoint"] == "POST /agents/me/resend-verification"
+    assert "smtp_providers" in ev
+    assert "sendgrid" in ev["smtp_providers"]
+
+
+def test_operator_verification_outbox(isolated_accounts_root, monkeypatch):
+    monkeypatch.setenv("ARCLYA_OPERATOR_KEY", "operator-test-key")
+    client = TestClient(create_app(isolated_accounts_root))
+    email = f"ops_{uuid.uuid4().hex[:6]}@example.com"
+    reg = client.post(
+        "/agents/register",
+        json=registration_payload(agent_name=_unique_name(), email=email),
+    )
+    agent_id = reg.json()["agent_id"]
+
+    denied = client.get("/agents/operator/verification-outbox", params={"agent_id": agent_id})
+    assert denied.status_code == 401
+
+    resp = client.get(
+        "/agents/operator/verification-outbox",
+        params={"agent_id": agent_id},
+        headers={"X-Arclya-Operator-Key": "operator-test-key"},
+    )
+    assert resp.status_code == 200
+    latest = resp.json()["latest"]
+    assert latest["agent_id"] == agent_id
+    assert latest["token"].startswith("ev_")
+    assert "/agents/verify-email?token=" in latest["verify_link"]
 
 
 def test_directory_requirement_disabled(isolated_accounts_root, monkeypatch):

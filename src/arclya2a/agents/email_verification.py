@@ -92,6 +92,38 @@ def build_verification_link(base_url: str, token: str) -> str:
     return f"{base}/agents/verify-email?token={quote(token)}"
 
 
+def build_verification_email_content(
+    *,
+    agent_name: str,
+    verify_link: str,
+    token: str,
+    base_url: str,
+    hours: int,
+) -> tuple[str, str]:
+    """Plain-text and HTML bodies for verification email."""
+    base = base_url.rstrip("/")
+    plain = (
+        f"Hello {agent_name},\n\n"
+        f"Verify your email to join the Arclya Agent Directory.\n\n"
+        f"Verification link (valid {hours} hours):\n"
+        f"{verify_link}\n\n"
+        f"Or POST the token to {base}/agents/verify-email\n"
+        f'{{"token": "{token}"}}\n\n'
+        f"If you did not register, ignore this message."
+    )
+    html = (
+        f"<p>Hello {agent_name},</p>"
+        f"<p>Verify your email to join the <strong>Arclya Agent Directory</strong>.</p>"
+        f'<p><a href="{verify_link}">Verify email</a> '
+        f"(link valid {hours} hours)</p>"
+        f'<p style="word-break:break-all;font-family:monospace;font-size:14px;">'
+        f"{verify_link}</p>"
+        f"<p>Or POST the token to <code>{base}/agents/verify-email</code></p>"
+        f"<p>If you did not register, ignore this message.</p>"
+    )
+    return plain, html
+
+
 def issue_verification_token(
     root: Path,
     *,
@@ -140,16 +172,16 @@ def send_verification_email(
 
     agent_name = account.get("agent_name", "your agent")
     verify_link = build_verification_link(base_url, token)
+    hours = verification_token_hours()
     subject = "Verify your Arclya agent email"
-    body = (
-        f"Hello {agent_name},\n\n"
-        f"Verify your email to join the Arclya Agent Directory.\n\n"
-        f"Verification link (valid {verification_token_hours()} hours):\n"
-        f"{verify_link}\n\n"
-        f"Or POST the token to {base_url.rstrip('/')}/agents/verify-email\n"
-        f'Body: {{"token": "{token}"}}\n\n'
-        f"If you did not register, ignore this message."
+    plain_body, html_body = build_verification_email_content(
+        agent_name=agent_name,
+        verify_link=verify_link,
+        token=token,
+        base_url=base_url,
+        hours=hours,
     )
+    body: str | tuple[str, str] = (plain_body, html_body)
 
     delivery_mode = effective_email_delivery_mode()
     outbox_entry: dict[str, Any] = {
@@ -157,7 +189,7 @@ def send_verification_email(
         "agent_id": account.get("agent_id"),
         "email": email,
         "subject": subject,
-        "body": body,
+        "body": plain_body,
         "token": token,
         "verify_link": verify_link,
         "delivery": "outbox",
@@ -294,10 +326,35 @@ def read_outbox_entries(root: Path, *, limit: int = 20) -> list[dict[str, Any]]:
 
 def latest_outbox_token(root: Path, *, agent_id: str | None = None) -> str | None:
     """Test helper: latest verification token from outbox."""
+    entry = latest_outbox_entry(root, agent_id=agent_id)
+    if not entry:
+        return None
+    token = entry.get("token")
+    return str(token) if token else None
+
+
+def latest_outbox_entry(root: Path, *, agent_id: str | None = None) -> dict[str, Any] | None:
+    """Latest verification outbox entry, optionally filtered by agent_id."""
     for entry in reversed(read_outbox_entries(root, limit=200)):
         if agent_id and entry.get("agent_id") != agent_id:
             continue
-        token = entry.get("token")
-        if token:
-            return str(token)
+        return entry
     return None
+
+
+def operator_verification_outbox_summary(
+    root: Path,
+    *,
+    agent_id: str | None = None,
+    limit: int = 5,
+) -> dict[str, Any]:
+    """Operator view of recent verification deliveries (launch testing / support)."""
+    entries = read_outbox_entries(root, limit=limit)
+    if agent_id:
+        entries = [e for e in entries if e.get("agent_id") == agent_id]
+    latest = entries[-1] if entries else None
+    return {
+        "count": len(entries),
+        "latest": latest,
+        "entries": entries,
+    }

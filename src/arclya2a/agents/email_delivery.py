@@ -15,6 +15,34 @@ logger = logging.getLogger(__name__)
 
 VALID_DELIVERY_MODES = frozenset({"auto", "outbox", "smtp"})
 
+# Documented SMTP URL patterns for common providers (credentials are secrets).
+SMTP_PROVIDER_EXAMPLES: dict[str, dict[str, str]] = {
+    "sendgrid": {
+        "host": "smtp.sendgrid.net",
+        "port": "587",
+        "url": "smtp://apikey:YOUR_SENDGRID_API_KEY@smtp.sendgrid.net:587",
+        "username": "apikey",
+    },
+    "resend": {
+        "host": "smtp.resend.com",
+        "port": "587",
+        "url": "smtp://resend:YOUR_RESEND_API_KEY@smtp.resend.com:587",
+        "username": "resend",
+    },
+    "mailgun": {
+        "host": "smtp.mailgun.org",
+        "port": "587",
+        "url": "smtp://postmaster@YOUR_DOMAIN.mailgun.org:YOUR_MAILGUN_PASSWORD@smtp.mailgun.org:587",
+        "username": "postmaster@YOUR_DOMAIN.mailgun.org",
+    },
+    "standard_smtp": {
+        "host": "mail.yourdomain.com",
+        "port": "587",
+        "url": "smtp://user:password@mail.yourdomain.com:587",
+        "username": "user",
+    },
+}
+
 
 def normalize_delivery_mode(raw: str | None) -> str:
     mode = (raw or "auto").strip().lower()
@@ -78,7 +106,12 @@ def send_smtp_message(
     message["Subject"] = subject
     message["From"] = from_addr
     message["To"] = to
-    message.set_content(body)
+    if isinstance(body, tuple):
+        plain, html = body
+        message.set_content(plain)
+        message.add_alternative(html, subtype="html")
+    else:
+        message.set_content(body)
 
     if config["use_ssl"]:
         context = ssl.create_default_context()
