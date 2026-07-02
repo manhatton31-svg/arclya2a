@@ -72,6 +72,14 @@ def test_resolved_public_url_prefers_arclya_public(monkeypatch):
     assert settings.resolved_public_url() == "https://arclya.example"
 
 
+def test_resolve_public_base_url_uses_env(monkeypatch):
+    from arclya2a.settings import public_url_source, resolve_public_base_url
+
+    monkeypatch.setenv("ARCLYA_PUBLIC_URL", "https://launch.arclya.example")
+    assert resolve_public_base_url() == "https://launch.arclya.example"
+    assert public_url_source() == "ARCLYA_PUBLIC_URL"
+
+
 def test_project_root_finds_repo_markers():
     root = project_root()
     assert (root / "config" / "core.json").is_file()

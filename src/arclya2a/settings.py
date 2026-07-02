@@ -74,7 +74,7 @@ def project_root() -> Path:
 
 
 def _parse_bool(raw: str | None, *, default: bool = False) -> bool:
-    if raw is None:
+    if raw is None or not str(raw).strip():
         return default
     return raw.strip().lower() in ("1", "true", "yes", "on")
 
@@ -231,6 +231,16 @@ class ArclyaSettings:
     sandbox_max_keys_per_agent: int
     sandbox_max_register_per_ip_day: int
     sandbox_rate_limit_per_minute: int
+    agent_register_rate_limit_per_minute: int
+    agent_directory_rate_limit_per_minute: int
+    agent_recommended_rate_limit_per_minute: int
+    agent_rotate_key_rate_limit_per_minute: int
+    agent_max_register_per_ip_per_day: int
+    agent_require_email_verification_for_directory: bool
+    agent_email_verification_token_hours: int
+    agent_email_from: str | None
+    agent_email_smtp_url: str | None
+    agent_email_delivery: str
     sandbox_force_dry_run: bool
     sandbox_fast_chain: bool
     learning_scheduler_enabled: bool
@@ -322,6 +332,30 @@ def _build_settings() -> ArclyaSettings:
         sandbox_rate_limit_per_minute=_parse_int(
             _env("ARCLYA_SANDBOX_RATE_LIMIT_PER_MINUTE"), default=10, minimum=3,
         ),
+        agent_register_rate_limit_per_minute=_parse_int(
+            _env("ARCLYA_AGENT_REGISTER_RATE_LIMIT_PER_MINUTE"), default=5, minimum=1,
+        ),
+        agent_directory_rate_limit_per_minute=_parse_int(
+            _env("ARCLYA_AGENT_DIRECTORY_RATE_LIMIT_PER_MINUTE"), default=30, minimum=1,
+        ),
+        agent_recommended_rate_limit_per_minute=_parse_int(
+            _env("ARCLYA_AGENT_RECOMMENDED_RATE_LIMIT_PER_MINUTE"), default=20, minimum=1,
+        ),
+        agent_rotate_key_rate_limit_per_minute=_parse_int(
+            _env("ARCLYA_AGENT_ROTATE_KEY_RATE_LIMIT_PER_MINUTE"), default=3, minimum=1,
+        ),
+        agent_max_register_per_ip_per_day=_parse_int(
+            _env("ARCLYA_AGENT_MAX_REGISTER_PER_IP_DAY"), default=10, minimum=1,
+        ),
+        agent_require_email_verification_for_directory=_parse_bool(
+            _env("ARCLYA_AGENT_REQUIRE_EMAIL_VERIFICATION"), default=True,
+        ),
+        agent_email_verification_token_hours=_parse_int(
+            _env("ARCLYA_AGENT_EMAIL_VERIFICATION_HOURS"), default=24, minimum=1,
+        ),
+        agent_email_from=_env("ARCLYA_AGENT_EMAIL_FROM") or None,
+        agent_email_smtp_url=_env("ARCLYA_AGENT_EMAIL_SMTP_URL") or None,
+        agent_email_delivery=_env("ARCLYA_AGENT_EMAIL_DELIVERY") or "auto",
         sandbox_force_dry_run=_parse_bool(_env("ARCLYA_SANDBOX_FORCE_DRY_RUN"), default=True),
         sandbox_fast_chain=_parse_bool(_env("ARCLYA_REHEARSAL_MODE") or None, default=True),
         learning_scheduler_enabled=_parse_bool(_env("ARCLYA_LEARNING_SCHEDULER_ENABLED"), default=False),
@@ -342,3 +376,44 @@ def get_settings() -> ArclyaSettings:
     """Return current settings from environment (loads .env on first call)."""
     ensure_dotenv_loaded()
     return _build_settings()
+
+
+def _core_config_base_url() -> str | None:
+    core_path = project_root() / "config" / "core.json"
+    if not core_path.is_file():
+        return None
+    try:
+        import json
+
+        core = json.loads(core_path.read_text(encoding="utf-8"))
+        raw = (core.get("server") or {}).get("base_url")
+        return str(raw).rstrip("/") if raw else None
+    except (json.JSONDecodeError, OSError, TypeError, AttributeError):
+        return None
+
+
+def public_url_source() -> str:
+    """Which configuration source supplies the public base URL."""
+    settings = get_settings()
+    if settings.public_url:
+        return "ARCLYA_PUBLIC_URL"
+    if settings.render_external_url:
+        return "RENDER_EXTERNAL_URL"
+    if _core_config_base_url():
+        return "config/core.json"
+    return "request_host"
+
+
+def resolve_public_base_url(*, fallback: str | None = None) -> str:
+    """
+    Canonical public base URL for Agent Card, onboarding links, and verification emails.
+
+    Priority: ARCLYA_PUBLIC_URL → RENDER_EXTERNAL_URL → fallback → config/core.json.
+    """
+    settings = get_settings()
+    resolved = settings.resolved_public_url(fallback=fallback)
+    if resolved:
+        return resolved
+    if fallback:
+        return fallback.rstrip("/")
+    return _core_config_base_url() or "http://127.0.0.1:8787"

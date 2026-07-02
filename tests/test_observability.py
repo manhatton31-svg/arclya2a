@@ -20,6 +20,8 @@ def test_record_and_list_ops_events(root):
 def test_build_ops_status(root):
     status = build_ops_status(root)
     assert status["status"] in ("healthy", "degraded")
+    assert "external_agents" in status
+    assert status["external_agents"]["status"] == "available"
     assert "learning" in status
     assert "tools" in status
     assert "handoffs" in status

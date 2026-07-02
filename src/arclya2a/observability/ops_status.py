@@ -18,6 +18,7 @@ from arclya2a.learning.patch_generator import list_patches
 from arclya2a.learning.patch_outcomes import list_learning_runs, patch_success_stats
 from arclya2a.observability.ops_events import list_ops_events
 from arclya2a.observability.security_events import build_security_metrics
+from arclya2a.agents.platform_status import build_agent_platform_status
 from arclya2a.tools.observability import execution_summary, list_tool_executions
 
 
@@ -162,6 +163,7 @@ def build_ops_status(root: Path) -> dict[str, Any]:
     return {
         "status": status,
         "checked_at": datetime.now(timezone.utc).isoformat(),
+        "external_agents": build_agent_platform_status(root),
         "learning": learning,
         "tools": tool_health,
         "handoffs": handoffs,

@@ -73,3 +73,74 @@ def list_production_keys_for_partner(root: Path, partner_id: str) -> list[dict[s
         if entry.get("partner_id") == partner_id:
             rows.append({**entry, "key_prefix": key[:20] + "…"})
     return rows
+
+
+def revoke_production_key(
+    root: Path,
+    key: str,
+    *,
+    reason: str,
+) -> bool:
+    """Deactivate a single production key. Returns True when the key existed and was active."""
+    keys = load_production_keys(root)
+    entry = keys.get(key)
+    if not entry or not entry.get("active", True):
+        return False
+    entry["active"] = False
+    entry["revoked_at"] = datetime.now(timezone.utc).isoformat()
+    entry["revoked_reason"] = reason
+    save_production_keys(root, keys)
+    return True
+
+
+def revoke_production_keys_for_partner(
+    root: Path,
+    partner_id: str,
+    *,
+    reason: str,
+    except_key: str | None = None,
+) -> list[str]:
+    """Deactivate all active production keys for a partner. Returns revoked key prefixes."""
+    keys = load_production_keys(root)
+    revoked: list[str] = []
+    now = datetime.now(timezone.utc).isoformat()
+    for key, entry in keys.items():
+        if entry.get("partner_id") != partner_id:
+            continue
+        if not entry.get("active", True):
+            continue
+        if except_key and key == except_key:
+            continue
+        entry["active"] = False
+        entry["revoked_at"] = now
+        entry["revoked_reason"] = reason
+        revoked.append(key[:20] + "…")
+    if revoked:
+        save_production_keys(root, keys)
+    return revoked
+
+
+def rotate_production_key_for_partner(
+    root: Path,
+    *,
+    partner_id: str,
+    agent_name: str,
+    rotated_by: str,
+    reason: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> tuple[str, list[str]]:
+    """Revoke all active keys for a partner and issue a new production key."""
+    revoked = revoke_production_keys_for_partner(
+        root,
+        partner_id,
+        reason=reason or "key_rotation",
+    )
+    key_metadata = {"account_type": "external_agent", **(metadata or {})}
+    new_key = issue_production_key(
+        root,
+        partner_id=partner_id,
+        agent_name=agent_name,
+        graduated_by=rotated_by,
+        metadata=key_metadata,
+    )
+    return new_key, revoked

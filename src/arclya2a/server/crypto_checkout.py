@@ -28,6 +28,7 @@ from arclya2a.payments.packages import (
     package_public_view,
 )
 from arclya2a.server.operator_auth import load_operator_key, verify_operator_key
+from arclya2a.server.public_url import resolve_request_public_url
 from arclya2a.payments.x402 import (
     apply_x402_headers,
     build_checkout_body,
@@ -105,7 +106,7 @@ def register_crypto_checkout_routes(router: APIRouter) -> None:
         if not is_crypto_payments_configured():
             return _crypto_unavailable_response()
         root = request.app.state.root
-        base_url = str(request.base_url).rstrip("/")
+        base_url = resolve_request_public_url(request)
         catalog_packages = list_payment_packages(root)
         return {
             "enabled": is_crypto_payments_enabled(),
@@ -185,7 +186,7 @@ def register_crypto_checkout_routes(router: APIRouter) -> None:
             raise HTTPException(status_code=500, detail="Payment record missing after checkout")
 
         resource = f"/payments/crypto/{payment['payment_id']}"
-        base_url = str(request.base_url).rstrip("/")
+        base_url = resolve_request_public_url(request)
         prefer_402 = request.headers.get("X-Arclya-Prefer-402", "").lower() in (
             "1",
             "true",
@@ -257,7 +258,7 @@ def register_crypto_checkout_routes(router: APIRouter) -> None:
             raise HTTPException(status_code=500, detail="Payment record missing after intent creation")
 
         resource = f"/payments/crypto/{payment['payment_id']}"
-        base_url = str(request.base_url).rstrip("/")
+        base_url = resolve_request_public_url(request)
         prefer_402 = request.headers.get("X-Arclya-Prefer-402", "").lower() in (
             "1",
             "true",

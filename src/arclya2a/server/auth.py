@@ -71,16 +71,25 @@ def verify_api_key(
 
         production_entry = lookup_production_key(root, provided)
         if production_entry:
-            return {
+            partner_id = production_entry.get("partner_id")
+            is_agent_account = str(partner_id or "").startswith("ag_")
+            client_id = caller_agent or (
+                f"agent:{partner_id}" if is_agent_account else f"partner:{partner_id}"
+            )
+            ctx: dict[str, Any] = {
                 "authenticated": True,
                 "mode": "production",
-                "client_id": caller_agent or f"partner:{production_entry.get('partner_id')}",
+                "client_id": client_id,
                 "caller_agent": caller_agent,
-                "partner_id": production_entry.get("partner_id"),
+                "partner_id": partner_id,
                 "agent_name": production_entry.get("agent_name"),
                 "key_prefix": provided[:20] + "…",
-                "graduated": True,
+                "graduated": not is_agent_account,
             }
+            if is_agent_account:
+                ctx["agent_id"] = partner_id
+                ctx["account_type"] = "external_agent"
+            return ctx
 
     if not configured_key:
         client_id = caller_agent or request.client.host if request.client else "anonymous"
@@ -109,6 +118,7 @@ PUBLIC_PATHS = frozenset({
     "/",
     "/health",
     "/status",
+    "/platform/status",
     "/ops/dashboard",
     "/onboarding/validate",
     "/partners/sandbox/register",
@@ -120,7 +130,16 @@ PUBLIC_PATHS = frozenset({
     "/payments/crypto/packages",
     "/agents/crypto-test-payer/.well-known/agent-card.json",
     "/agents/crypto-test-payer/fund-instructions",
+    "/agents/register",
+    "/agents",
+    "/agents/directory",
+    "/agents/onboarding/guide",
+    "/agents/terms",
 })
+
+_AGENT_PUBLIC_PREFIXES = (
+    "/agents/ag_",
+)
 
 PROTECTED_PREFIXES = (
     "/orchestrate/",
@@ -130,10 +149,14 @@ PROTECTED_PREFIXES = (
     "/tools/executions",
     "/security/",
     "/partners/me/",
+    "/agents/me",
+    "/agents/recommended",
 )
 
 
 def path_requires_auth(path: str) -> bool:
     if path in PUBLIC_PATHS:
+        return False
+    if any(path.startswith(prefix) for prefix in _AGENT_PUBLIC_PREFIXES):
         return False
     return any(path.startswith(prefix) for prefix in PROTECTED_PREFIXES)

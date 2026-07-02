@@ -6,6 +6,12 @@ ROOT = Path(__file__).resolve().parents[1]
 _AGENT_CONTEXT = {"id": "outreach_worker"}
 
 
+@pytest.fixture(autouse=True)
+def _agent_email_outbox_mode(monkeypatch):
+    """CI/tests: never send real SMTP; read tokens from verification outbox."""
+    monkeypatch.setenv("ARCLYA_AGENT_EMAIL_DELIVERY", "outbox")
+
+
 def _mock_xai_response(agent_id: str) -> dict:
     responses = {
         "outreach_worker": {

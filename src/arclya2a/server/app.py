@@ -26,6 +26,7 @@ from arclya2a.server.landing import LANDING_HTML
 from arclya2a.handoff.validators import HandoffValidationError
 from arclya2a.orchestrator.engine import Orchestrator
 from arclya2a.server.auth import (
+    extract_api_key,
     load_api_key,
     load_rate_limit_per_minute,
     path_requires_auth,
@@ -92,6 +93,14 @@ from arclya2a.learning.learning_scheduler import (
     should_run_learning,
 )
 from arclya2a.learning.patch_outcomes import build_dashboard, list_learning_runs
+from arclya2a.agents.audit import log_agent_auth_failure
+from arclya2a.agents.security import (
+    build_agent_auth_error,
+    is_agent_account_path,
+    rate_limit_for_bucket,
+    resolve_agent_rate_limit_bucket,
+)
+from arclya2a.server.agent_account_routes import register_agent_account_routes
 from arclya2a.server.crypto_checkout import register_crypto_checkout_routes
 from arclya2a.server.crypto_test_payer_routes import register_crypto_test_payer_routes
 from arclya2a.server.schemas import HandoffChainRequest, HandoffChainResponse, HandoffChainSummary
@@ -111,14 +120,10 @@ def load_core_config() -> dict[str, Any]:
 
 
 def resolve_public_base_url() -> str:
-    """Public URL for Agent Card discovery (Render, explicit override, or local config)."""
-    from arclya2a.settings import get_settings
+    """Public URL for Agent Card discovery (custom domain, Render, or local config)."""
+    from arclya2a.settings import resolve_public_base_url as _resolve
 
-    settings = get_settings()
-    resolved = settings.resolved_public_url(
-        fallback=load_core_config()["server"]["base_url"],
-    )
-    return resolved or load_core_config()["server"]["base_url"].rstrip("/")
+    return _resolve(fallback=load_core_config()["server"]["base_url"])
 
 
 def resolve_server_bind() -> tuple[str, int]:
@@ -269,10 +274,34 @@ def create_app(
     *,
     api_key: str | None = None,
     rate_limit_per_minute: int | None = None,
+    agent_register_rate_limit_per_minute: int | None = None,
+    agent_directory_rate_limit_per_minute: int | None = None,
+    agent_recommended_rate_limit_per_minute: int | None = None,
+    agent_rotate_key_rate_limit_per_minute: int | None = None,
 ) -> FastAPI:
     root = root or ROOT
     configured_key = api_key if api_key is not None else load_api_key()
     limit = rate_limit_per_minute if rate_limit_per_minute is not None else load_rate_limit_per_minute()
+    agent_reg_limit = (
+        agent_register_rate_limit_per_minute
+        if agent_register_rate_limit_per_minute is not None
+        else rate_limit_for_bucket("register")
+    )
+    agent_dir_limit = (
+        agent_directory_rate_limit_per_minute
+        if agent_directory_rate_limit_per_minute is not None
+        else rate_limit_for_bucket("directory")
+    )
+    agent_rec_limit = (
+        agent_recommended_rate_limit_per_minute
+        if agent_recommended_rate_limit_per_minute is not None
+        else rate_limit_for_bucket("recommended")
+    )
+    agent_rotate_limit = (
+        agent_rotate_key_rate_limit_per_minute
+        if agent_rotate_key_rate_limit_per_minute is not None
+        else rate_limit_for_bucket("rotate_key")
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -298,9 +327,41 @@ def create_app(
     app.state.api_key = configured_key
     app.state.rate_limiter = RateLimiter(max_per_minute=limit)
     app.state.sandbox_rate_limiter = RateLimiter(max_per_minute=sandbox_rate_limit())
+    app.state.agent_rate_limiters = {
+        "register": RateLimiter(max_per_minute=agent_reg_limit),
+        "directory": RateLimiter(max_per_minute=agent_dir_limit),
+        "recommended": RateLimiter(max_per_minute=agent_rec_limit),
+        "rotate_key": RateLimiter(max_per_minute=agent_rotate_limit),
+    }
     _register_exception_handlers(app)
 
     configure_logging()
+
+    def _client_ip(req: Request) -> str:
+        return req.client.host if req.client else "anonymous"
+
+    def _rate_limit_exceeded_response(
+        *,
+        retry_after: int,
+        rate_cap: int,
+        bucket: str | None = None,
+    ) -> JSONResponse:
+        details: dict[str, Any] = {
+            "retry_after_seconds": retry_after,
+            "limit_per_minute": rate_cap,
+        }
+        if bucket:
+            details["bucket"] = bucket
+        response = json_error(
+            code="rate_limit_exceeded",
+            message="Rate limit exceeded. Retry later.",
+            details=details,
+            status_code=429,
+        )
+        response.headers["Retry-After"] = str(retry_after)
+        response.headers["X-RateLimit-Remaining"] = "0"
+        response.headers["X-RateLimit-Limit"] = str(rate_cap)
+        return response
 
     @app.middleware("http")
     async def security_middleware(request: Request, call_next):
@@ -308,6 +369,19 @@ def create_app(
         if path_requires_auth(request.url.path):
             caller = verify_api_key(request, app.state.api_key, root=app.state.root)
             if caller is None:
+                if is_agent_account_path(request.url.path):
+                    auth_err = build_agent_auth_error(
+                        request.url.path,
+                        provided_key=extract_api_key(request),
+                        root=app.state.root,
+                    )
+                    log_agent_auth_failure(app.state.root, request, auth_err)
+                    return json_error(
+                        code=auth_err["code"],
+                        message=auth_err["message"],
+                        details=auth_err.get("details"),
+                        status_code=auth_err["status_code"],
+                    )
                 return json_error(
                     code="authentication_error",
                     message="Invalid or missing API key",
@@ -340,15 +414,25 @@ def create_app(
                 )
 
             client_id = caller.get("client_id", "anonymous")
-            rate_limiter = (
-                app.state.sandbox_rate_limiter if sandbox_mode else app.state.rate_limiter
+            agent_bucket = resolve_agent_rate_limit_bucket(
+                request.url.path,
+                request.method,
             )
-            rate_cap = sandbox_rate_limit() if sandbox_mode else limit
-            allowed, remaining, retry_after = rate_limiter.check(client_id)
+            if agent_bucket:
+                rate_limiter = app.state.agent_rate_limiters[agent_bucket]
+                rate_cap = rate_limit_for_bucket(agent_bucket)
+                rl_client = caller.get("agent_id") or client_id
+            else:
+                rate_limiter = (
+                    app.state.sandbox_rate_limiter if sandbox_mode else app.state.rate_limiter
+                )
+                rate_cap = sandbox_rate_limit() if sandbox_mode else limit
+                rl_client = client_id
+            allowed, remaining, retry_after = rate_limiter.check(rl_client)
             if not allowed:
                 logger.warning(
                     "rate_limit_exceeded client_id=%s path=%s retry_after=%s",
-                    client_id,
+                    rl_client,
                     request.url.path,
                     retry_after,
                 )
@@ -360,15 +444,11 @@ def create_app(
                         client_ip=request.client.host if request.client else None,
                         path=request.url.path,
                     )
-                response = json_error(
-                    code="rate_limit_exceeded",
-                    message="Rate limit exceeded. Retry later.",
-                    details={"retry_after_seconds": retry_after, "limit_per_minute": rate_cap},
-                    status_code=429,
+                return _rate_limit_exceeded_response(
+                    retry_after=retry_after,
+                    rate_cap=rate_cap,
+                    bucket=agent_bucket,
                 )
-                response.headers["Retry-After"] = str(retry_after)
-                response.headers["X-RateLimit-Remaining"] = "0"
-                return response
 
             set_sandbox_active(sandbox_mode)
             try:
@@ -382,6 +462,26 @@ def create_app(
                 response.headers["X-Arclya-Mode"] = "sandbox"
             return response
 
+        agent_bucket = resolve_agent_rate_limit_bucket(request.url.path, request.method)
+        agent_rate_remaining: int | None = None
+        if agent_bucket:
+            rate_limiter = app.state.agent_rate_limiters[agent_bucket]
+            rate_cap = rate_limit_for_bucket(agent_bucket)
+            rl_client = f"ip:{_client_ip(request)}:{agent_bucket}"
+            allowed, agent_rate_remaining, retry_after = rate_limiter.check(rl_client)
+            if not allowed:
+                logger.warning(
+                    "agent_rate_limit_exceeded client_id=%s path=%s bucket=%s",
+                    rl_client,
+                    request.url.path,
+                    agent_bucket,
+                )
+                return _rate_limit_exceeded_response(
+                    retry_after=retry_after,
+                    rate_cap=rate_cap,
+                    bucket=agent_bucket,
+                )
+
         caller = verify_api_key(request, app.state.api_key, root=app.state.root)
         if caller and caller.get("mode") == "sandbox":
             request.state.caller = caller
@@ -393,7 +493,11 @@ def create_app(
             response.headers["X-Arclya-Mode"] = "sandbox"
             return response
 
-        return await call_next(request)
+        response = await call_next(request)
+        if agent_bucket and agent_rate_remaining is not None:
+            response.headers["X-RateLimit-Limit"] = str(rate_limit_for_bucket(agent_bucket))
+            response.headers["X-RateLimit-Remaining"] = str(max(0, agent_rate_remaining))
+        return response
 
     def _orchestrator() -> Orchestrator:
         client = app.state.xai_client
@@ -722,6 +826,8 @@ def create_app(
 
     @app.get("/health")
     async def health(detailed: bool = False) -> dict[str, Any]:
+        from arclya2a.agents.platform_status import build_agent_platform_summary
+
         ops = build_ops_status(app.state.root)
         base = {
             "status": ops.get("status", "healthy"),
@@ -732,6 +838,7 @@ def create_app(
             "learning_last_run": ops.get("learning", {}).get("last_run_at"),
             "tool_failure_rate": ops.get("tools", {}).get("failure_rate"),
             "pending_high_risk_patches": ops.get("pending_high_risk_count", 0),
+            "external_agents": build_agent_platform_summary(app.state.root),
         }
         if detailed:
             base["operations"] = ops
@@ -740,12 +847,43 @@ def create_app(
     @app.get("/status")
     async def status() -> dict[str, Any]:
         """Full operational status: learning, tools, handoffs, pending patches."""
+        from arclya2a.agents.platform_status import build_public_platform_summary
+
         ops = build_ops_status(app.state.root)
         return {
             "service": "arclya2a",
             "auth_enabled": bool(app.state.api_key),
+            "platform_summary": build_public_platform_summary(
+                app.state.root,
+                ops_status=ops.get("status", "healthy"),
+                auth_enabled=bool(app.state.api_key),
+                checked_at=ops.get("checked_at"),
+            ),
+            "status_page": "/platform/status",
             **ops,
         }
+
+    @app.get("/platform/status", response_class=HTMLResponse)
+    async def platform_status_page() -> str:
+        """Visitor-friendly HTML status page before agent sign-up."""
+        from arclya2a.agents.platform_status import build_public_platform_summary
+        from arclya2a.server.status_page import build_status_page_html
+
+        ops = build_ops_status(app.state.root)
+        snapshot = {
+            "service": "arclya2a",
+            "auth_enabled": bool(app.state.api_key),
+            "platform_summary": build_public_platform_summary(
+                app.state.root,
+                ops_status=ops.get("status", "healthy"),
+                auth_enabled=bool(app.state.api_key),
+                checked_at=ops.get("checked_at"),
+            ),
+            "external_agents": ops.get("external_agents", {}),
+            "status": ops.get("status", "healthy"),
+            "checked_at": ops.get("checked_at"),
+        }
+        return build_status_page_html(snapshot=snapshot)
 
     @app.get("/ops/dashboard")
     async def ops_dashboard() -> dict[str, Any]:
@@ -1151,6 +1289,10 @@ def create_app(
     register_crypto_checkout_routes(checkout_router)
     register_crypto_test_payer_routes(checkout_router)
     app.include_router(checkout_router)
+
+    agent_router = APIRouter(tags=["agents"])
+    register_agent_account_routes(agent_router)
+    app.include_router(agent_router)
 
     @app.get("/prompt/assembly/{agent_id}")
     async def prompt_assembly(agent_id: str, request: Request) -> dict[str, Any]:

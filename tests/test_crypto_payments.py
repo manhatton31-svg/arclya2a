@@ -192,21 +192,21 @@ def test_create_intent_rejects_unconfigured_network(root, monkeypatch):
         create_crypto_payment_intent(root, amount_usd=10.0, network="solana")
 
 
-def test_crypto_payments_summary_and_ops_status(root, monkeypatch):
+def test_crypto_payments_summary_and_ops_status(tmp_path, monkeypatch):
     _enable_crypto(monkeypatch)
-    before = crypto_payments_summary(root)
-    create_crypto_payment_intent(root, amount_usd=10.0)
-    summary = crypto_payments_summary(root)
+    before = crypto_payments_summary(tmp_path)
+    create_crypto_payment_intent(tmp_path, amount_usd=10.0)
+    summary = crypto_payments_summary(tmp_path)
     assert summary["configured"] is True
     assert summary["enabled"] is True
     assert summary["payment_count"] == before["payment_count"] + 1
     assert summary["intent_count"] == before["intent_count"] + 1
 
-    status = build_ops_status(root)
+    status = build_ops_status(tmp_path)
     assert "payments" in status
     assert status["payments"]["payment_count"] == before["payment_count"] + 1
 
-    dashboard = build_ops_dashboard(root)
+    dashboard = build_ops_dashboard(tmp_path)
     assert dashboard["payments"]["network"] == "base"
     assert dashboard["payments"]["token"] == "USDC"
     assert set(dashboard["payments"]["networks"]) == {"base", "ethereum", "solana", "bnb"}

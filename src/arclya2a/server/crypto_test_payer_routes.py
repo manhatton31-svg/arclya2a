@@ -13,6 +13,7 @@ from arclya2a.agents.crypto_test_payer_card import (
     resolve_test_payer_wallet,
 )
 from arclya2a.payments.packages import get_payment_package, list_payment_packages
+from arclya2a.server.public_url import resolve_request_public_url
 
 
 def register_crypto_test_payer_routes(router: APIRouter) -> None:
@@ -20,7 +21,7 @@ def register_crypto_test_payer_routes(router: APIRouter) -> None:
 
     @router.get("/agents/crypto-test-payer/.well-known/agent-card.json")
     async def crypto_test_payer_agent_card(request: Request) -> JSONResponse:
-        base_url = str(request.base_url).rstrip("/")
+        base_url = resolve_request_public_url(request)
         return JSONResponse(content=build_crypto_test_payer_agent_card(base_url=base_url))
 
     @router.get("/agents/crypto-test-payer/fund-instructions")
@@ -29,7 +30,7 @@ def register_crypto_test_payer_routes(router: APIRouter) -> None:
         package: str = "per_close",
     ) -> dict[str, Any]:
         """Tell funders where to send USDC and how the round-trip test works."""
-        base_url = str(request.base_url).rstrip("/")
+        base_url = resolve_request_public_url(request)
         root = request.app.state.root
         package_row = get_payment_package(package, root) or get_payment_package("per_close", root) or {}
         package_id = package_row.get("id", "per_close")

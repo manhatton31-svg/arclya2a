@@ -177,6 +177,11 @@ def test_health_includes_service(root):
     assert "learning_last_run" in data
     assert "tool_failure_rate" in data
     assert "pending_high_risk_patches" in data
+    agents = data["external_agents"]
+    assert agents["status"] == "available"
+    assert "terms_version" in agents
+    assert "accounts_total" in agents
+    assert "onboarding_guide_version" in agents
 
 
 def test_status_endpoint(root):
@@ -188,6 +193,14 @@ def test_status_endpoint(root):
     assert "learning" in data
     assert "tools" in data
     assert "handoffs" in data
+    agents = data["external_agents"]
+    assert agents["status"] == "available"
+    assert "accounts" in agents
+    assert "rate_limits" in agents
+    assert "activity_24h" in agents
+    assert agents["documentation"]["production_readiness"] == "docs/production-readiness-checklist.md"
+    assert "platform_summary" in data
+    assert data["status_page"] == "/platform/status"
 
 
 def test_ops_dashboard_endpoint(root):
@@ -217,6 +230,8 @@ def test_landing_page(root):
     assert resp.status_code == 200
     assert "Arclya A2A" in resp.text
     assert "lead routing" in resp.text.lower()
+    assert "accept_terms" in resp.text
+    assert "production-readiness-checklist" in resp.text
     assert "Pay with USDC" in resp.text
     assert "Solana" in resp.text
     assert "BSC" in resp.text

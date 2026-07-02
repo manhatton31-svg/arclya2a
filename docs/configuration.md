@@ -44,6 +44,7 @@ Render injects environment variables at runtime. Typical production setup:
 | `XAI_API_KEY` | Set manually in Render dashboard |
 | `ARCLYA_OPERATOR_KEY` | Generate a strong secret (32+ chars); never share with partners |
 | `RENDER_EXTERNAL_URL` | Set automatically by Render |
+| `ARCLYA_PUBLIC_URL` | Set when using a custom domain (overrides `RENDER_EXTERNAL_URL` for Agent Card, onboarding links, verification emails) |
 | `PORT` | Set automatically by Render |
 
 Crypto payment variables (when ready to accept USDC on multiple chains):
@@ -78,12 +79,36 @@ Agents submit `tx_hash` proof via `POST /payments/crypto/{payment_id}/submit`. *
 - Use a dedicated receive address for Arclya sales; rotate if compromised.
 - Prefer Base + USDC for Phase 1 (low fees, widely supported).
 
+## External agent email verification (production)
+
+Verification emails are sent when an agent registers with an email or updates their email address. Links use the canonical public URL (`ARCLYA_PUBLIC_URL` or `RENDER_EXTERNAL_URL`).
+
+| Variable | Example | Purpose |
+|----------|---------|---------|
+| `ARCLYA_AGENT_EMAIL_DELIVERY` | `auto` | `auto` = SMTP when configured; `outbox` = dev/CI only; `smtp` = force SMTP |
+| `ARCLYA_AGENT_EMAIL_SMTP_URL` | `smtp://apikey:SG.xxx@smtp.sendgrid.net:587` | SMTP connection URL (`smtp://` or `smtps://`) |
+| `ARCLYA_AGENT_EMAIL_FROM` | `noreply@yourdomain.com` | From address (required for SMTP) |
+| `ARCLYA_PUBLIC_URL` | `https://agents.yourdomain.com` | Verification links in emails |
+| `ARCLYA_AGENT_REQUIRE_EMAIL_VERIFICATION` | `true` | Block directory opt-in until verified |
+
+**SendGrid example:**
+
+```bash
+ARCLYA_AGENT_EMAIL_DELIVERY=auto
+ARCLYA_AGENT_EMAIL_SMTP_URL=smtp://apikey:YOUR_SENDGRID_API_KEY@smtp.sendgrid.net:587
+ARCLYA_AGENT_EMAIL_FROM=noreply@yourdomain.com
+ARCLYA_PUBLIC_URL=https://agents.yourdomain.com
+```
+
+**Local dev / CI:** keep `ARCLYA_AGENT_EMAIL_DELIVERY=outbox` (default in `.env.example`). Tokens are written to `data/agent_accounts/verification_outbox.jsonl`.
+
 ## Variable reference
 
 See `.env.example` for the full list with defaults. Grouped categories:
 
 - **Core:** `XAI_API_KEY`, `ARCLYA_API_KEY`, `ARCLYA_OPERATOR_KEY`
 - **Server:** `ARCLYA_PUBLIC_URL`, `PORT`, `ARCLYA_RATE_LIMIT_PER_MINUTE`, `ARCLYA_JSON_LOGS`
+- **Agent email:** `ARCLYA_AGENT_EMAIL_DELIVERY`, `ARCLYA_AGENT_EMAIL_SMTP_URL`, `ARCLYA_AGENT_EMAIL_FROM`, `ARCLYA_AGENT_REQUIRE_EMAIL_VERIFICATION`
 - **Sandbox:** `ARCLYA_SANDBOX_*`
 - **Tools:** `ARCLYA_TOOL_DRY_RUN`, retry settings
 - **Learning:** scheduler and auto-apply settings

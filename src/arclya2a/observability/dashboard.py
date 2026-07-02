@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from arclya2a.agents.audit import build_agent_audit_summary
+from arclya2a.agents.moderation import build_agent_management_summary
 from arclya2a.learning.patch_outcomes import build_dashboard as build_patch_dashboard
 from arclya2a.observability.ops_events import list_ops_events
 from arclya2a.observability.ops_status import build_ops_status
@@ -18,6 +20,9 @@ def build_ops_dashboard(root: Path) -> dict[str, Any]:
     patches = build_patch_dashboard(root)
     security = build_security_metrics(root)
     partners = build_partner_funnel_metrics(root)
+    agent_audit = build_agent_audit_summary(root)
+    agent_management = build_agent_management_summary(root)
+    agent_audit["management"] = agent_management
     learning_events = list_ops_events(root, category="learning", limit=15)
     tool_events = list_ops_events(root, category="tools", limit=10)
     handoff_events = list_ops_events(root, category="handoff", limit=10)
@@ -57,6 +62,7 @@ def build_ops_dashboard(root: Path) -> dict[str, Any]:
         },
         "security": security,
         "partners": partners,
+        "agents": agent_audit,
         "payments": ops.get("payments", {}),
         "server_events": server_events,
     }
@@ -173,6 +179,42 @@ def format_ops_dashboard_text(dashboard: dict[str, Any]) -> str:
                 f"{p.get('status', '?'):10} "
                 f"${p.get('amount', 0)} {p.get('network', '?')} "
                 f"tx={p.get('tx_hash') or 'none'}"
+            )
+
+    agents = dashboard.get("agents", {})
+    if agents:
+        counts = agents.get("counts_24h", {})
+        mgmt = agents.get("management", {})
+        lines.extend([
+            "",
+            "── External Agents ──",
+            f"  Total agents:          {mgmt.get('total_agents', 0)}",
+            f"  Active:                {mgmt.get('active', 0)}",
+            f"  Suspended:             {mgmt.get('suspended', 0)}",
+            f"  Pending review:        {mgmt.get('pending_review', 0)}",
+            f"  Publicly listed:       {mgmt.get('publicly_listed', 0)}",
+            f"  Registered (7d):       {mgmt.get('registered_last_7d', 0)}",
+            f"  Suspended (7d):        {mgmt.get('suspended_last_7d', 0)}",
+            f"  Audit events (total):  {agents.get('total_events', 0)}",
+            f"  Suspicious (24h):      {agents.get('suspicious_24h', 0)}",
+            f"  Registrations (24h):   {counts.get('agent_registered', 0)}",
+            f"  Profile updates (24h): {counts.get('agent_profile_updated', 0)}",
+            f"  Directory searches:    {counts.get('agent_directory_search', 0)}",
+            f"  Auth failures (24h):   {counts.get('agent_auth_failure', 0)}",
+            f"  Operator manage:       GET /agents/manage",
+            f"  Operator audit:        GET /agents/audit",
+        ])
+        for reg in mgmt.get("recently_registered", [])[:3]:
+            lines.append(
+                f"    + {reg.get('agent_name', '?'):20} "
+                f"{reg.get('agent_id', '?'):14} "
+                f"status={reg.get('status', '?')}"
+            )
+        for e in agents.get("recent_events", [])[:3]:
+            lines.append(
+                f"    [{e.get('event_type', '?'):28}] "
+                f"agent={e.get('agent_id') or '-':14} "
+                f"suspicious={bool(e.get('suspicious'))}"
             )
 
     partners = dashboard.get("partners", {})
