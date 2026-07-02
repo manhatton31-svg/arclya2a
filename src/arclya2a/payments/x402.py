@@ -186,6 +186,113 @@ def x402_response(
     )
 
 
+X402_FACILITATORS: list[dict[str, Any]] = [
+    {
+        "id": "arclya-native",
+        "name": "Arclya Direct Settlement",
+        "type": "direct",
+        "x402Version": 2,
+        "schemes": ["exact"],
+        "networks": list(X402_NETWORK_IDS.values()),
+        "routing": "direct_to_platform_wallet",
+    },
+    {
+        "id": "arclya-batch",
+        "name": "Arclya Batch Settlement",
+        "type": "batch_settlement",
+        "x402Version": 2,
+        "schemes": ["exact", "batch"],
+        "max_batch_size": 50,
+        "routing": "aggregate_then_settle",
+    },
+    {
+        "id": "arclya-deferred",
+        "name": "Arclya Deferred Settlement",
+        "type": "deferred",
+        "x402Version": 2,
+        "schemes": ["exact", "deferred"],
+        "routing": "authorize_now_settle_later",
+    },
+]
+
+
+def list_x402_facilitators() -> list[dict[str, Any]]:
+    return [dict(f) for f in X402_FACILITATORS]
+
+
+def build_deferred_payment_payload(
+    payment: dict[str, Any],
+    *,
+    resource: str,
+    settle_after_hours: int = 24,
+    facilitator_id: str = "arclya-deferred",
+) -> dict[str, Any]:
+    """x402 V2 deferred payment — authorize now, settle later."""
+    base = build_payment_required_payload(payment, resource=resource)
+    base["settlementMode"] = "deferred"
+    base["facilitator"] = facilitator_id
+    base["deferredSettlement"] = {
+        "settle_after_hours": settle_after_hours,
+        "status": "authorized",
+        "payment_id": payment.get("payment_id"),
+    }
+    if base.get("accepts"):
+        for accept in base["accepts"]:
+            accept["settlementMode"] = "deferred"
+            accept["facilitator"] = facilitator_id
+            accept["extra"] = dict(accept.get("extra") or {})
+            accept["extra"]["settle_after_hours"] = settle_after_hours
+    return base
+
+
+def build_batch_settlement_payload(
+    payments: list[dict[str, Any]],
+    *,
+    facilitator_id: str = "arclya-batch",
+    batch_id: str,
+) -> dict[str, Any]:
+    """x402 V2 batch settlement for multiple open payments."""
+    total = sum(float(p.get("amount", p.get("amount_usd", 0))) for p in payments)
+    currency = payments[0].get("currency", "USDC") if payments else "USDC"
+    return {
+        "x402Version": 2,
+        "settlementMode": "batch",
+        "facilitator": facilitator_id,
+        "batch_id": batch_id,
+        "payment_count": len(payments),
+        "total_amount": round(total, 2),
+        "currency": currency,
+        "payments": [
+            {
+                "payment_id": p.get("payment_id"),
+                "amount": p.get("amount", p.get("amount_usd")),
+                "status": p.get("status"),
+                "resource": f"/payments/crypto/{p.get('payment_id')}",
+            }
+            for p in payments
+        ],
+        "submit_url": "/payments/crypto/x402/batch-settle",
+    }
+
+
+def apply_facilitator_routing(
+    payment_required: dict[str, Any],
+    *,
+    facilitator_id: str,
+) -> dict[str, Any]:
+    """Attach facilitator routing metadata to an x402 PaymentRequired payload."""
+    facilitator = next((f for f in X402_FACILITATORS if f["id"] == facilitator_id), None)
+    routed = dict(payment_required)
+    routed["facilitator"] = facilitator_id
+    if facilitator:
+        routed["facilitator_details"] = {
+            "name": facilitator.get("name"),
+            "type": facilitator.get("type"),
+            "routing": facilitator.get("routing"),
+        }
+    return routed
+
+
 def parse_x_payment_header(value: str | None) -> dict[str, Any] | None:
     """Parse X-Payment or PAYMENT-SIGNATURE header (JSON or base64 JSON)."""
     if not value or not value.strip():

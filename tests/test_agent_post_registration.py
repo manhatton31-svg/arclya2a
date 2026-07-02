@@ -34,7 +34,7 @@ def test_registration_includes_welcome_and_resources(isolated_accounts_root):
     assert data['api_key_reminder']['shown_once'] is True
     assert data['api_key_reminder']['importance'] == 'critical'
     assert 'cannot be retrieved' in data['api_key_reminder']['message']
-    assert len(data['next_steps']) == 8
+    assert len(data['next_steps']) == 9
     assert data['next_steps'][0]['id'] == 'accept_terms'
     assert data['next_steps'][0]['priority'] == 'critical'
     assert data['next_steps'][1]['id'] == 'store_api_key'
@@ -43,6 +43,9 @@ def test_registration_includes_welcome_and_resources(isolated_accounts_root):
     resources = data['resources']
     assert resources['onboarding_guide'].endswith('/agents/onboarding/guide')
     assert resources['agent_directory'].endswith('/agents/directory')
+    assert resources['agent_hangout'].endswith('/agents/hangout')
+    hangout_step = next(s for s in data['next_steps'] if s['id'] == 'join_hangout')
+    assert hangout_step['url'].endswith('/agents/hangout')
     assert resources['profile'].endswith('/agents/me')
     assert data['agent_id'] in resources['public_profile']
     assert 'documentation' in resources
@@ -63,7 +66,8 @@ def test_onboarding_guide_includes_post_registration_flow(isolated_accounts_root
     assert guide['version'] == GUIDE_VERSION
     assert guide['post_registration'] is not None
     assert guide['post_registration']['title']
-    assert len(guide['post_registration']['steps']) == 8
+    assert len(guide['post_registration']['steps']) == 9
+    assert 'agent_hangout' in guide
     assert guide['full_flow']['steps']
     assert guide['resources']['onboarding_guide'].endswith('/agents/onboarding/guide')
     assert guide['authentication']['shown_once_at_registration'] is True

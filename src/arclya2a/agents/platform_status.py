@@ -7,6 +7,7 @@ from typing import Any
 
 from arclya2a.agents.accounts import count_agent_accounts
 from arclya2a.agents.audit import build_agent_audit_summary
+from arclya2a.agents.component_health import build_component_health
 from arclya2a.agents.email_delivery import effective_email_delivery_mode
 from arclya2a.agents.email_verification import (
     directory_requires_email_verification,
@@ -53,8 +54,16 @@ def build_agent_platform_status(root: Path) -> dict[str, Any]:
             "registrations": counts_24h.get("agent_registered", 0),
             "directory_browse": counts_24h.get("agent_directory_browse", 0),
             "directory_search": counts_24h.get("agent_directory_search", 0),
+            "directory_opt_ins": counts_24h.get("agent_directory_opt_in", 0),
             "auth_failures": counts_24h.get("agent_auth_failure", 0),
+            "email_verifications": counts_24h.get("agent_email_verified", 0),
             "suspicious_events": audit.get("suspicious_24h", 0),
+        },
+        "suspicious_activity": {
+            "events_24h": audit.get("suspicious_24h", 0),
+            "recent": [
+                e for e in audit.get("recent_events", []) if e.get("suspicious")
+            ][:5],
         },
         "endpoints": {
             "register": "POST /agents/register",
@@ -88,10 +97,15 @@ def build_public_platform_summary(
     ops_status: str = "healthy",
     auth_enabled: bool = False,
     checked_at: str | None = None,
+    payments: dict[str, Any] | None = None,
+    component_health: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Visitor-friendly platform summary for /status and the HTML status page."""
     agents = build_agent_platform_status(root)
     accounts = agents["accounts"]
+    components = component_health or build_component_health(root)
+    pay = payments or {}
+    activity = agents.get("activity_24h", {})
     return {
         "status": ops_status,
         "checked_at": checked_at,
@@ -100,14 +114,31 @@ def build_public_platform_summary(
         "auth_enabled": auth_enabled,
         "external_agents_status": agents["status"],
         "registration_open": True,
+        "launch_ready": components.get("launch_ready", False),
         "onboarding_guide": "GET /agents/onboarding/guide",
         "agent_directory": "GET /agents/directory",
         "terms": "GET /agents/terms",
         "agent_card": "GET /.well-known/agent-card.json",
         "accounts_total": accounts.get("total", 0),
+        "accounts_active": accounts.get("active", 0),
         "directory_listed": accounts.get("publicly_listed", 0),
+        "email_verified": accounts.get("email_verified", 0),
         "terms_version": agents["terms_version"],
         "onboarding_guide_version": agents["onboarding_guide_version"],
+        "activity_24h": activity,
+        "suspicious_events_24h": activity.get("suspicious_events", 0),
+        "payments": {
+            "enabled": pay.get("enabled", False),
+            "payment_count": pay.get("payment_count", 0),
+            "pending_review_count": pay.get("pending_review_count", 0),
+            "confirmed_total_usd": pay.get("confirmed_total_usd", 0),
+            "activity_24h": (components.get("crypto") or {}).get("activity_24h", {}),
+        },
+        "components": {
+            "email_status": (components.get("email") or {}).get("status"),
+            "crypto_status": (components.get("crypto") or {}).get("status"),
+            "email_delivery": (components.get("email") or {}).get("delivery_mode_effective"),
+        },
     }
 
 
@@ -115,6 +146,7 @@ def build_agent_platform_summary(root: Path) -> dict[str, Any]:
     """Compact external-agent summary for GET /health."""
     full = build_agent_platform_status(root)
     accounts = full["accounts"]
+    components = build_component_health(root)
     return {
         "status": full["status"],
         "onboarding_guide_version": full["onboarding_guide_version"],
@@ -125,5 +157,8 @@ def build_agent_platform_summary(root: Path) -> dict[str, Any]:
         "email_verified": accounts.get("email_verified", 0),
         "email_verification_required": full["email_verification"]["required_for_directory"],
         "registrations_24h": full["activity_24h"]["registrations"],
+        "suspicious_events_24h": full["activity_24h"].get("suspicious_events", 0),
         "public_url": resolve_public_base_url(),
+        "launch_ready": components.get("launch_ready", False),
+        "email_delivery": components.get("email", {}).get("delivery_mode_effective"),
     }

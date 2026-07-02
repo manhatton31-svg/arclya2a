@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from arclya2a.agents.audit import EVENT_TERMS_ACCEPTED, read_agent_audit_events
+from arclya2a.agents.onboarding_guide import GUIDE_VERSION
 from arclya2a.agents.terms import CURRENT_TERMS_VERSION, current_terms_version
 from arclya2a.server.app import create_app
 from tests.agent_helpers import register_verify_and_list, registration_payload, verify_agent_from_outbox
@@ -206,7 +207,7 @@ def test_patch_rejects_terms_revocation(isolated_accounts_root):
 def test_onboarding_guide_documents_terms(isolated_accounts_root):
     client = TestClient(create_app(isolated_accounts_root))
     guide = client.get("/agents/onboarding/guide").json()
-    assert guide["version"] == "1.5.1"
+    assert guide["version"] == GUIDE_VERSION
     assert guide["terms"]["version"] == CURRENT_TERMS_VERSION
     assert guide["directory"]["requires_terms_accepted"] is True
     assert "production_readiness" in guide

@@ -224,6 +224,63 @@ def _apply_handoff_targets(agent: dict[str, Any], handoff: dict[str, Any]) -> di
     return handoff
 
 
+def _merge_review_draft(metadata: dict[str, Any], *, subject: str, body: str) -> None:
+    """Normalize reviewable content for final_arbiter QC and prompt assembly."""
+    if subject and body:
+        metadata["draft"] = {"subject": subject, "body": body}
+
+
+def _resolve_qc_content(ssot: dict[str, Any]) -> tuple[str | None, str | None, str, list[str]]:
+    """
+    Resolve structural QC content from merged SSOT across seller lifecycle phases.
+
+    Returns (subject, body, content_type, extra_issues).
+    """
+    meta = ssot.get("metadata", {})
+    issues: list[str] = []
+
+    draft = meta.get("draft") or {}
+    if draft.get("subject") and draft.get("body"):
+        return str(draft["subject"]), str(draft["body"]), "draft", issues
+
+    close_pkg = meta.get("close_package") or {}
+    if close_pkg.get("subject") and close_pkg.get("body"):
+        return str(close_pkg["subject"]), str(close_pkg["body"]), "close_package", issues
+    if close_pkg.get("cta_url"):
+        subject = close_pkg.get("subject") or "Lead routing commitment"
+        body = (
+            close_pkg.get("body")
+            or close_pkg.get("partner_agent_commitment")
+            or str(close_pkg.get("cta_url"))
+        )
+        if body:
+            return str(subject), str(body), "close_package", issues
+
+    recruitment = meta.get("recruitment_draft") or {}
+    if recruitment.get("subject") and recruitment.get("body"):
+        return (
+            str(recruitment["subject"]),
+            str(recruitment["body"]),
+            "recruitment_draft",
+            issues,
+        )
+
+    profile = meta.get("product_profile") or {}
+    if meta.get("onboarding_complete") or meta.get("product_profile_complete"):
+        if profile.get("product_name") and profile.get("product_description"):
+            ok, missing = validate_product_profile(profile)
+            if not ok:
+                issues.extend(f"Profile missing: {field}" for field in missing)
+            return (
+                f"Product profile: {profile['product_name']}",
+                str(profile["product_description"]),
+                "product_profile",
+                issues,
+            )
+
+    return None, None, "none", issues
+
+
 def _check_success_metrics(agent: dict[str, Any], handoff: dict[str, Any]) -> dict[str, Any]:
     """Validate confidence against registry good_enough / success_metrics."""
     validation = handoff.setdefault("validation", {"confidence": 0, "check": ""})
@@ -286,28 +343,34 @@ def _validate_profit_guardrail(
 def _validate_final_arbiter(
     agent: dict[str, Any], handoff: dict[str, Any], root: Path, context: dict[str, Any]
 ) -> dict[str, Any]:
-    """Supplement LLM QC with SSOT draft; only fail if structural fields missing."""
+    """Supplement LLM QC with phase-appropriate SSOT content (onboarding, recruit, close, outreach)."""
     ssot = context["ssot"]
-    draft = ssot.get("metadata", {}).get("draft", {})
+    subject, body, content_type, structural_issues = _resolve_qc_content(ssot)
     payload = handoff.setdefault("payload", {})
     qc = payload.get("qc_result", {})
     issues = list(qc.get("issues", []))
+    issues.extend(structural_issues)
 
-    if not draft.get("subject"):
+    if not subject:
         issues.append("Missing subject line")
-    if not draft.get("body"):
+    if not body:
         issues.append("Missing body")
 
     passed = qc.get("passed", False) and len(issues) == 0
-    payload["qc_result"] = {"passed": passed, "issues": issues}
-    payload["draft"] = draft
+    payload["qc_result"] = {
+        "passed": passed,
+        "issues": issues,
+        "content_type": content_type,
+    }
+    if subject and body:
+        payload["draft"] = {"subject": subject, "body": body}
 
     if passed and handoff.get("status") == "COMPLETE":
         handoff["ssot_updates"] = handoff.get("ssot_updates") or {"stage": "qc_passed"}
     elif not passed and handoff.get("status") == "COMPLETE":
         policy = agent.get("error_policy", "reject_and_return")
         if policy == "reject_and_return":
-            handoff["next_action"] = "return_to_outreach_worker"
+            handoff["next_action"] = "return_to_entry_agent"
             handoff["ssot_updates"] = handoff.get("ssot_updates") or {"stage": "qc_failed"}
 
     return handoff
@@ -462,16 +525,22 @@ def _validate_onboarding_specialist(
         save_agent_profile(root, agent_id, profile)
         payload["onboarding_complete"] = True
         payload["missing_fields"] = []
+        metadata = {
+            "product_profile": profile,
+            "product_profile_complete": True,
+            "onboarding_complete": True,
+            "onboarding_status": "complete",
+            "destination_cta": build_destination_cta(profile),
+        }
+        _merge_review_draft(
+            metadata,
+            subject=f"Product profile: {profile.get('product_name', 'product')}",
+            body=str(profile.get("product_description", "")),
+        )
         handoff["ssot_updates"] = handoff.get("ssot_updates") or {
             "stage": "onboarded",
             "summary": f"Onboarded: {profile.get('product_name', 'product')}",
-            "metadata": {
-                "product_profile": profile,
-                "product_profile_complete": True,
-                "onboarding_complete": True,
-                "onboarding_status": "complete",
-                "destination_cta": build_destination_cta(profile),
-            },
+            "metadata": metadata,
         }
         targets = agent.get("handoff_targets", [])
         if handoff.get("status") == "COMPLETE" and targets:
@@ -536,6 +605,16 @@ def _validate_closer(
         close_pkg["destination_link"] = profile.get("destination_link", "")
         close_pkg["affiliate_code"] = profile.get("affiliate_code", "")
         close_pkg.setdefault("pricing_model", "success_based_pay_on_close")
+        close_pkg.setdefault(
+            "subject",
+            close_pkg.get("subject") or "Confirm lead routing partnership",
+        )
+        close_pkg.setdefault(
+            "body",
+            close_pkg.get("body")
+            or close_pkg.get("partner_agent_commitment")
+            or f"Route warm leads to {cta}",
+        )
 
     payload = handoff.get("payload", {})
     from arclya2a.partners.sandbox import is_sandbox_active
@@ -569,7 +648,18 @@ def _validate_closer(
 
     if handoff.get("status") == "COMPLETE":
         stage = "lead_routing_committed" if payload.get("lead_routing_confirmed") else "close_package_ready"
-        handoff["ssot_updates"] = handoff.get("ssot_updates") or {"stage": stage}
+        updates = handoff.get("ssot_updates") or {"stage": stage}
+        meta_updates = updates.setdefault("metadata", {})
+        if close_pkg:
+            meta_updates["close_package"] = close_pkg
+            subj = close_pkg.get("subject") or "Lead routing commitment"
+            body = (
+                close_pkg.get("body")
+                or close_pkg.get("partner_agent_commitment")
+                or close_pkg.get("cta_url", "")
+            )
+            _merge_review_draft(meta_updates, subject=str(subj), body=str(body))
+        handoff["ssot_updates"] = updates
 
         if payload.get("deal_closed") and payload.get("lead_routing_confirmed"):
             from arclya2a.partners.sandbox import is_sandbox_active
@@ -610,9 +700,18 @@ def _validate_recruiter(
     """Tag acquisition stage; route to guardrail chain (not onboarding)."""
     if handoff.get("status") == "COMPLETE":
         stage = handoff.get("payload", {}).get("acquisition_stage", "invited")
+        recruitment_draft = handoff.get("payload", {}).get("recruitment_draft") or {}
+        outreach = handoff.get("payload", {}).get("outreach_message") or {}
+        metadata: dict[str, Any] = {"acquisition_stage": stage}
+        if recruitment_draft:
+            metadata["recruitment_draft"] = recruitment_draft
+            subj = recruitment_draft.get("subject") or outreach.get("subject")
+            body = recruitment_draft.get("body") or outreach.get("body")
+            if subj and body:
+                _merge_review_draft(metadata, subject=str(subj), body=str(body))
         handoff["ssot_updates"] = handoff.get("ssot_updates") or {
             "stage": "recruiting",
-            "metadata": {"acquisition_stage": stage},
+            "metadata": metadata,
         }
         ssot = context["ssot"]
         meta = ssot.get("metadata", {})

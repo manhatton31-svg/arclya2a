@@ -265,7 +265,8 @@ docs/                    Integration and deployment guides
 - Partner Integration Guide and pre-onboarding validation endpoint
 - A2A Agent Card discovery with authentication hints
 - API key auth (`X-Arclya-Key` / Bearer) and per-client rate limiting
-- Constitutional multi-agent chains with profit guardrail and QC arbiter
+- Constitutional multi-agent chains with profit guardrail and QC arbiter (production mode: full chain per phase)
+- Production seller constitution E2E tests (`tests/test_seller_constitution_production.py`)
 - Product profile onboarding with schema validation
 - Agent-to-agent recruitment and closer negotiation
 - Lead routing commitment close with tracked CTA construction

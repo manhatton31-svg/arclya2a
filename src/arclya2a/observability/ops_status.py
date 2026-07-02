@@ -18,6 +18,7 @@ from arclya2a.learning.patch_generator import list_patches
 from arclya2a.learning.patch_outcomes import list_learning_runs, patch_success_stats
 from arclya2a.observability.ops_events import list_ops_events
 from arclya2a.observability.security_events import build_security_metrics
+from arclya2a.agents.component_health import build_component_health
 from arclya2a.agents.platform_status import build_agent_platform_status
 from arclya2a.tools.observability import execution_summary, list_tool_executions
 
@@ -160,10 +161,23 @@ def build_ops_status(root: Path) -> dict[str, Any]:
     if security.get("counts_24h", {}).get("total", 0) >= 10:
         status = "degraded"
 
+    external_agents = build_agent_platform_status(root)
+    component_health = build_component_health(root)
+    if external_agents.get("activity_24h", {}).get("suspicious_events", 0) >= 5:
+        status = "degraded"
+    if component_health.get("email", {}).get("status") == "misconfigured":
+        status = "degraded"
+
     return {
         "status": status,
         "checked_at": datetime.now(timezone.utc).isoformat(),
-        "external_agents": build_agent_platform_status(root),
+        "external_agents": external_agents,
+        "component_health": component_health,
+        "launch_readiness": {
+            "ready": component_health.get("launch_ready", False),
+            "overall": component_health.get("overall"),
+            "blocking_issues": component_health.get("blocking_issues", []),
+        },
         "learning": learning,
         "tools": tool_health,
         "handoffs": handoffs,

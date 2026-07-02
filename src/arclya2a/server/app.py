@@ -101,6 +101,9 @@ from arclya2a.agents.security import (
     resolve_agent_rate_limit_bucket,
 )
 from arclya2a.server.agent_account_routes import register_agent_account_routes
+from arclya2a.server.hangout_routes import register_hangout_routes
+from arclya2a.server.referral_routes import register_referral_routes
+from arclya2a.agents.agent_identity import attach_platform_signature, verify_signature
 from arclya2a.server.crypto_checkout import register_crypto_checkout_routes
 from arclya2a.server.crypto_test_payer_routes import register_crypto_test_payer_routes
 from arclya2a.server.schemas import HandoffChainRequest, HandoffChainResponse, HandoffChainSummary
@@ -514,9 +517,25 @@ def create_app(
         return LANDING_HTML
 
     @app.get("/.well-known/agent-card.json")
-    async def agent_card() -> JSONResponse:
+    async def agent_card(request: Request) -> JSONResponse:
         card = build_agent_card()
-        return JSONResponse(content=card)
+        signed = attach_platform_signature(card, root=request.app.state.root)
+        return JSONResponse(content=signed)
+
+    @app.post("/.well-known/agent-card/verify")
+    async def verify_platform_agent_card(request: Request) -> dict[str, Any]:
+        """Verify HMAC signature on a signed platform Agent Card (A2A v1.0)."""
+        try:
+            body = await request.json()
+        except Exception:
+            return {"valid": False, "error": "JSON body required"}
+        if not isinstance(body, dict):
+            return {"valid": False, "error": "Body must be a JSON object"}
+        signature = body.pop("signature", None)
+        if not signature:
+            return {"valid": False, "error": "signature field required"}
+        valid = verify_signature(body, signature, root=request.app.state.root)
+        return {"valid": valid, "a2a_protocol_version": "1.0"}
 
     @app.post("/partners/sandbox/register")
     async def sandbox_register(request: Request) -> dict[str, Any]:
@@ -829,6 +848,7 @@ def create_app(
         from arclya2a.agents.platform_status import build_agent_platform_summary
 
         ops = build_ops_status(app.state.root)
+        components = ops.get("component_health", {})
         base = {
             "status": ops.get("status", "healthy"),
             "service": "arclya2a",
@@ -838,6 +858,11 @@ def create_app(
             "learning_last_run": ops.get("learning", {}).get("last_run_at"),
             "tool_failure_rate": ops.get("tools", {}).get("failure_rate"),
             "pending_high_risk_patches": ops.get("pending_high_risk_count", 0),
+            "launch_ready": ops.get("launch_readiness", {}).get("ready", False),
+            "components": {
+                "email": (components.get("email") or {}).get("status"),
+                "crypto": (components.get("crypto") or {}).get("status"),
+            },
             "external_agents": build_agent_platform_summary(app.state.root),
         }
         if detailed:
@@ -858,6 +883,8 @@ def create_app(
                 ops_status=ops.get("status", "healthy"),
                 auth_enabled=bool(app.state.api_key),
                 checked_at=ops.get("checked_at"),
+                payments=ops.get("payments"),
+                component_health=ops.get("component_health"),
             ),
             "status_page": "/platform/status",
             **ops,
@@ -872,14 +899,21 @@ def create_app(
         ops = build_ops_status(app.state.root)
         snapshot = {
             "service": "arclya2a",
+            "status": ops.get("status", "healthy"),
+            "checked_at": ops.get("checked_at"),
             "auth_enabled": bool(app.state.api_key),
             "platform_summary": build_public_platform_summary(
                 app.state.root,
                 ops_status=ops.get("status", "healthy"),
                 auth_enabled=bool(app.state.api_key),
                 checked_at=ops.get("checked_at"),
+                payments=ops.get("payments"),
+                component_health=ops.get("component_health"),
             ),
             "external_agents": ops.get("external_agents", {}),
+            "component_health": ops.get("component_health", {}),
+            "payments": ops.get("payments", {}),
+            "launch_readiness": ops.get("launch_readiness", {}),
             "status": ops.get("status", "healthy"),
             "checked_at": ops.get("checked_at"),
         }
@@ -1291,6 +1325,8 @@ def create_app(
     app.include_router(checkout_router)
 
     agent_router = APIRouter(tags=["agents"])
+    register_hangout_routes(agent_router)
+    register_referral_routes(agent_router)
     register_agent_account_routes(agent_router)
     app.include_router(agent_router)
 

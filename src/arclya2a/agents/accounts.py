@@ -36,6 +36,8 @@ VALID_DIRECTORY_SORTS = frozenset({
     "agent_name_desc",
     "relevance",
     "match_score",
+    "trust_score_desc",
+    "reputation_desc",
 })
 DESCRIPTION_MAX_LEN = 2000
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -283,10 +285,10 @@ def lookup_agent_by_api_key(root: Path, api_key: str) -> dict[str, Any] | None:
     return account
 
 
-def public_profile(account: dict[str, Any]) -> dict[str, Any]:
+def public_profile(account: dict[str, Any], *, root: Path | None = None) -> dict[str, Any]:
     """Compact public-safe profile summary (no API key or email)."""
     capabilities = account.get("capabilities", [])
-    return {
+    profile = {
         "agent_id": account.get("agent_id"),
         "agent_name": account.get("agent_name"),
         "description": account.get("description", ""),
@@ -301,12 +303,20 @@ def public_profile(account: dict[str, Any]) -> dict[str, Any]:
         "terms_accepted": has_accepted_current_terms(account),
         "publicly_listed": bool(account.get("publicly_listed", False)),
     }
+    if root is not None:
+        from arclya2a.agents.reputation import public_reputation_summary
+
+        rep = public_reputation_summary(root, account.get("agent_id", ""))
+        if rep:
+            profile["reputation"] = rep
+    return profile
 
 
 def detailed_public_profile(
     account: dict[str, Any],
     *,
     profile_url: str | None = None,
+    root: Path | None = None,
 ) -> dict[str, Any]:
     """Rich public profile for GET /agents/{agent_id} (no email or API keys)."""
     capabilities = account.get("capabilities", [])
@@ -325,6 +335,12 @@ def detailed_public_profile(
     }
     if profile_url:
         profile["profile_url"] = profile_url
+    if root is not None:
+        from arclya2a.agents.reputation import public_reputation_summary
+
+        rep = public_reputation_summary(root, account.get("agent_id", ""))
+        if rep:
+            profile["reputation"] = rep
     return profile
 
 
@@ -333,6 +349,7 @@ def directory_entry(
     *,
     relevance: float | None = None,
     match_score: float | None = None,
+    root: Path | None = None,
 ) -> dict[str, Any]:
     """Public directory listing entry."""
     capabilities = account.get("capabilities", [])
@@ -349,6 +366,12 @@ def directory_entry(
         entry["relevance"] = round(relevance, 4)
     if match_score is not None:
         entry["match_score"] = round(match_score, 4)
+    if root is not None:
+        from arclya2a.agents.reputation import public_reputation_summary
+
+        rep = public_reputation_summary(root, account.get("agent_id", ""))
+        if rep:
+            entry["reputation"] = rep
     return entry
 
 
@@ -450,6 +473,15 @@ def _sort_directory_rows(rows: list[dict[str, Any]], sort: str) -> list[dict[str
             ),
             reverse=True,
         )
+    if sort in {"trust_score_desc", "reputation_desc"}:
+        return sorted(
+            rows,
+            key=lambda r: (
+                float(r.get("_trust_score", 0.0)),
+                str(r.get("created_at", "")),
+            ),
+            reverse=True,
+        )
     if sort == "created_at_asc":
         return sorted(rows, key=lambda r: str(r.get("created_at", "")))
     if sort == "agent_name_asc":
@@ -520,6 +552,7 @@ def register_agent_account(
     capabilities: list[str] | None = None,
     terms_accepted: Any = None,
     accept_terms: Any = None,
+    referral_code: str | None = None,
 ) -> tuple[dict[str, Any] | None, str | None, str | None]:
     """
     Register a new external agent account.
@@ -579,6 +612,20 @@ def register_agent_account(
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(account) + "\n")
+
+    if referral_code:
+        from arclya2a.agents.referrals import record_referral, referral_program_enabled, resolve_referral_code
+
+        if referral_program_enabled():
+            referrer_id = resolve_referral_code(root, referral_code)
+            if referrer_id and referrer_id != agent_id:
+                record_referral(
+                    root,
+                    referrer_agent_id=referrer_id,
+                    referred_agent_id=agent_id,
+                    referral_code=str(referral_code).strip().lower(),
+                )
+                account["referred_by"] = referrer_id
 
     return account, api_key, None
 
@@ -739,6 +786,10 @@ def update_agent_profile(
         return None, "Agent account not found"
 
     _write_all(root, rows)
+
+    from arclya2a.agents.referrals import try_complete_referral
+
+    try_complete_referral(root, agent_id)
     return updated, None
 
 
@@ -784,6 +835,11 @@ def list_directory_agents(
         relevance = 0.0
         match_score = 0.0
 
+        from arclya2a.agents.reputation import compute_trust_score
+
+        trust = compute_trust_score(root, str(row.get("agent_id", "")))
+        enriched["_trust_score"] = float(trust.get("trust_score", 0.0))
+
         if search_filter:
             relevance = compute_search_relevance(row, search_filter)
             if relevance <= 0:
@@ -805,6 +861,7 @@ def list_directory_agents(
             row,
             relevance=row.get("_relevance") if has_search else None,
             match_score=row.get("_match_score") if recommended else None,
+            root=root,
         )
         for row in sorted_rows[offset : offset + limit]
     ]

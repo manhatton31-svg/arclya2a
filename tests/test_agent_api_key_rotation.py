@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from arclya2a.agents.audit import EVENT_API_KEY_ROTATED, read_agent_audit_events
+from arclya2a.agents.onboarding_guide import GUIDE_VERSION
 from arclya2a.partners.production_keys import lookup_production_key
 from arclya2a.server.app import create_app
 from tests.agent_helpers import registration_payload
@@ -172,7 +173,7 @@ def test_registration_mentions_key_rotation_recovery(isolated_accounts_root):
 def test_onboarding_guide_documents_key_rotation(isolated_accounts_root):
     client = TestClient(create_app(isolated_accounts_root))
     guide = client.get("/agents/onboarding/guide").json()
-    assert guide["version"] == "1.5.1"
+    assert guide["version"] == GUIDE_VERSION
     assert guide["api_key_rotation"]["self_service_endpoint"] == "POST /agents/me/rotate-key"
     assert guide["authentication"]["rotate_endpoint"] == "POST /agents/me/rotate-key"
 

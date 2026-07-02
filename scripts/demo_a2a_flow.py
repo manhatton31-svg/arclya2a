@@ -463,12 +463,20 @@ def _verify_guardrail_chain(
             phase_name != "recruiter" or "onboarding_specialist" not in agents_run
         ),
     }
+    qc_passed = None
+    for handoff in handoff_chain:
+        if handoff.get("agent_id") == "final_arbiter":
+            qc_passed = (handoff.get("payload") or {}).get("qc_result", {}).get("passed")
+            break
+    checks["qc_passed"] = qc_passed
+
     checks["guardrails_ok"] = (
         checks["profit_guardrail_executed"]
         and checks["final_arbiter_executed"]
         and checks["chain_matches_expected"]
         and checks["no_unexpected_onboarding"]
         and checks["recruiter_skips_onboarding"]
+        and qc_passed is True
     )
     checks["agent_summaries"] = _phase_agent_summary(handoff_chain)
     if not quiet:
@@ -477,6 +485,7 @@ def _verify_guardrail_chain(
         print(
             f"  guardrails: profit_guardrail={checks['profit_guardrail_executed']}, "
             f"final_arbiter={checks['final_arbiter_executed']}, "
+            f"qc_passed={checks.get('qc_passed')}, "
             f"ok={checks['guardrails_ok']}"
         )
     return checks

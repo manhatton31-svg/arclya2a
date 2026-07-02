@@ -133,14 +133,17 @@ def check_agent_registration_allowed(
     return True, None
 
 
-def sanitize_profile_text(text: str | None) -> str:
+def sanitize_profile_text(text: str | None, *, max_len: int | None = None) -> str:
     """Strip control characters and normalize whitespace in profile text fields."""
     if text is None:
         return ""
     cleaned = _CONTROL_CHAR_RE.sub("", str(text))
     cleaned = cleaned.replace("\r\n", "\n").replace("\r", "\n")
     cleaned = _EXCESSIVE_WHITESPACE_RE.sub("  ", cleaned)
-    return cleaned.strip()
+    cleaned = cleaned.strip()
+    if max_len is not None and len(cleaned) > max_len:
+        cleaned = cleaned[:max_len].rstrip()
+    return cleaned
 
 
 def is_valid_capability_token(cap: str) -> bool:

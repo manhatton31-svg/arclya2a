@@ -22,6 +22,7 @@ EVENT_STATUS_CHANGED = "agent_status_changed"
 EVENT_EMAIL_VERIFIED = "agent_email_verified"
 EVENT_API_KEY_ROTATED = "agent_api_key_rotated"
 EVENT_TERMS_ACCEPTED = "agent_terms_accepted"
+EVENT_HANGOUT_ACTIVITY = "agent_hangout_activity"
 
 DIRECTORY_EVENT_TYPES = frozenset({
     EVENT_DIRECTORY_SEARCH,
@@ -47,6 +48,7 @@ ALL_EVENT_TYPES = frozenset({
     EVENT_EMAIL_VERIFIED,
     EVENT_API_KEY_ROTATED,
     EVENT_TERMS_ACCEPTED,
+    EVENT_HANGOUT_ACTIVITY,
 })
 
 
@@ -452,4 +454,26 @@ def log_agent_directory_activity(
             "result_count": result_count,
             "total_matches": total,
         },
+    )
+
+
+def log_hangout_activity(
+    root: Path,
+    request: Any,
+    *,
+    event_type: str,
+    agent_id: str | None = None,
+    details: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Audit hangout, deal room, hub, and marketplace activity."""
+    client_ip = request.client.host if getattr(request, "client", None) else None
+    payload = {"hangout_event": event_type, **(details or {})}
+    return log_agent_audit(
+        root,
+        event_type=EVENT_HANGOUT_ACTIVITY,
+        agent_id=agent_id,
+        client_ip=client_ip,
+        path=request.url.path,
+        method=request.method,
+        details=payload,
     )

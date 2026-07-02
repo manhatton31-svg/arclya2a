@@ -109,7 +109,7 @@ See `.env.example` for the full list with defaults. Grouped categories:
 - **Core:** `XAI_API_KEY`, `ARCLYA_API_KEY`, `ARCLYA_OPERATOR_KEY`
 - **Server:** `ARCLYA_PUBLIC_URL`, `PORT`, `ARCLYA_RATE_LIMIT_PER_MINUTE`, `ARCLYA_JSON_LOGS`
 - **Agent email:** `ARCLYA_AGENT_EMAIL_DELIVERY`, `ARCLYA_AGENT_EMAIL_SMTP_URL`, `ARCLYA_AGENT_EMAIL_FROM`, `ARCLYA_AGENT_REQUIRE_EMAIL_VERIFICATION`
-- **Sandbox:** `ARCLYA_SANDBOX_*`
+- **Sandbox:** `ARCLYA_SANDBOX_*`, `ARCLYA_REHEARSAL_MODE` (sandbox fast-path only; production keys always use full constitutional chain)
 - **Tools:** `ARCLYA_TOOL_DRY_RUN`, retry settings
 - **Learning:** scheduler and auto-apply settings
 - **Graduation:** `ARCLYA_GRADUATION_WEBHOOK_URL`

@@ -30,12 +30,17 @@ from arclya2a.payments.packages import (
 from arclya2a.server.operator_auth import load_operator_key, verify_operator_key
 from arclya2a.server.public_url import resolve_request_public_url
 from arclya2a.payments.x402 import (
+    apply_facilitator_routing,
     apply_x402_headers,
+    build_batch_settlement_payload,
     build_checkout_body,
+    build_deferred_payment_payload,
+    list_x402_facilitators,
     parse_x_payment_header,
     payment_requires_settlement,
     x402_response,
 )
+from arclya2a.payments.x402_store import record_batch_settlement, record_deferred_payment
 from arclya2a.server.errors import json_error
 from arclya2a.server.schemas import (
     CryptoPaymentCheckoutRequest,
@@ -439,3 +444,110 @@ def register_crypto_checkout_routes(router: APIRouter) -> None:
             payment_required=False,
             include_settlement=True,
         )
+
+    @router.get("/payments/crypto/x402/facilitators")
+    async def x402_facilitators() -> dict[str, Any]:
+        """x402 V2 facilitator routing — direct, batch, and deferred settlement."""
+        return {
+            "x402Version": 2,
+            "facilitators": list_x402_facilitators(),
+            "constitutional": {
+                "crypto_first": True,
+                "margin_positive_required": True,
+            },
+        }
+
+    @router.post("/payments/crypto/x402/deferred")
+    async def x402_deferred_payment(request: Request) -> Any:
+        """Create deferred x402 payment — authorize now, settle later."""
+        root = request.app.state.root
+        if not is_crypto_payments_configured() or not is_crypto_payments_enabled():
+            return _crypto_unavailable_response()
+        try:
+            body = await request.json()
+        except Exception:
+            return json_error(code="validation_error", message="JSON body required", status_code=422)
+        amount = float(body.get("amount_usd") or body.get("amount") or 0)
+        settle_after = int(body.get("settle_after_hours") or 24)
+        facilitator_id = str(body.get("facilitator_id") or "arclya-deferred")
+        try:
+            intent = create_crypto_payment_intent(
+                root,
+                amount_usd=amount,
+                network=body.get("network"),
+                partner_id=body.get("partner_id"),
+                deal_id=body.get("deal_id"),
+                customer_ref=body.get("customer_ref"),
+                memo=body.get("memo") or "Arclya deferred x402 payment",
+                metadata={"settlement_mode": "deferred", "facilitator_id": facilitator_id},
+            )
+        except ValueError as exc:
+            return json_error(code="invalid_payment_request", message=str(exc), status_code=400)
+        payment = get_crypto_payment(root, intent.payment_id)
+        if not payment:
+            raise HTTPException(status_code=500, detail="Payment record missing")
+        record_deferred_payment(
+            root,
+            payment_id=str(payment["payment_id"]),
+            settle_after_hours=settle_after,
+            facilitator_id=facilitator_id,
+        )
+        resource = f"/payments/crypto/{payment['payment_id']}"
+        deferred = build_deferred_payment_payload(
+            payment,
+            resource=resource,
+            settle_after_hours=settle_after,
+            facilitator_id=facilitator_id,
+        )
+        routed = apply_facilitator_routing(deferred, facilitator_id=facilitator_id)
+        response_body = build_checkout_body(payment, payment_required=True)
+        response_body["x402"] = routed
+        response_body["settlement_mode"] = "deferred"
+        response = JSONResponse(status_code=402, content=response_body)
+        return apply_x402_headers(response, payment, resource=resource, payment_required=True)
+
+    @router.post("/payments/crypto/x402/batch-settle")
+    async def x402_batch_settle(request: Request) -> dict[str, Any]:
+        """x402 V2 batch settlement for multiple open payments."""
+        root = request.app.state.root
+        if not is_crypto_payments_configured():
+            return _crypto_unavailable_response()
+        try:
+            body = await request.json()
+        except Exception:
+            return json_error(code="validation_error", message="JSON body required", status_code=422)
+        payment_ids = body.get("payment_ids") or []
+        if not isinstance(payment_ids, list) or not payment_ids:
+            return json_error(
+                code="validation_error",
+                message="payment_ids array required",
+                status_code=422,
+            )
+        facilitator_id = str(body.get("facilitator_id") or "arclya-batch")
+        payments: list[dict[str, Any]] = []
+        for pid in payment_ids[:50]:
+            payment = get_crypto_payment(root, str(pid))
+            if payment and payment_requires_settlement(str(payment.get("status", ""))):
+                payments.append(payment)
+        if not payments:
+            return json_error(
+                code="validation_error",
+                message="No open payments found for batch settlement",
+                status_code=422,
+            )
+        batch = record_batch_settlement(
+            root,
+            payment_ids=[str(p.get("payment_id")) for p in payments],
+            facilitator_id=facilitator_id,
+        )
+        payload = build_batch_settlement_payload(
+            payments,
+            facilitator_id=facilitator_id,
+            batch_id=str(batch.get("extension_id")),
+        )
+        return {
+            "batch_settlement": payload,
+            "x402Version": 2,
+            "facilitator": facilitator_id,
+            "status": "pending_settlement",
+        }

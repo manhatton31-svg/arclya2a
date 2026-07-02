@@ -262,7 +262,12 @@ def register_agent_account_routes(router: APIRouter) -> None:
             return json_error(code="validation_error", message=err, status_code=422)
 
         log_agent_email_verified(request.app.state.root, account=updated)
-        return {
+
+        from arclya2a.agents.referrals import try_complete_referral
+
+        referral_result = try_complete_referral(request.app.state.root, str(updated.get("agent_id", "")))
+
+        response: dict[str, Any] = {
             "verified": True,
             "agent_id": updated.get("agent_id"),
             "email_verified": True,
@@ -273,6 +278,13 @@ def register_agent_account_routes(router: APIRouter) -> None:
             "email_verification": build_email_verification_status(updated),
             "profile": public_profile(updated),
         }
+        if referral_result:
+            response["referral_completion"] = {
+                "status": referral_result.get("status"),
+                "referral_id": referral_result.get("referral_id"),
+                "payout_payment_id": referral_result.get("payout_payment_id"),
+            }
+        return response
 
     @router.get("/agents/verify-email")
     async def agents_verify_email_link(request: Request) -> dict[str, Any]:
@@ -559,6 +571,8 @@ def register_agent_account_routes(router: APIRouter) -> None:
                 status_code=422,
             )
 
+        referral_code = body.get("referral_code")
+
         account, api_key, err = register_agent_account(
             request.app.state.root,
             agent_name=agent_name,
@@ -566,6 +580,7 @@ def register_agent_account_routes(router: APIRouter) -> None:
             description=description,
             capabilities=capabilities,
             terms_accepted=terms_accepted,
+            referral_code=str(referral_code).strip() if referral_code else None,
         )
         if err:
             log_agent_registration_attempt(
@@ -653,7 +668,11 @@ def register_agent_account_routes(router: APIRouter) -> None:
         account = _resolve_authenticated_account(request)
         if not account:
             return _agent_auth_error_response(request)
-        return private_profile(account)
+        from arclya2a.agents.referrals import referral_profile_summary
+
+        profile = private_profile(account)
+        profile["referral_program"] = referral_profile_summary(account["agent_id"])
+        return profile
 
     @router.post("/agents/me/rotate-key")
     async def agents_rotate_key(request: Request) -> dict[str, Any]:
@@ -1034,6 +1053,19 @@ def register_agent_account_routes(router: APIRouter) -> None:
             ),
         }
 
+    @router.get("/agents/{agent_id}/agent-card.json")
+    async def agents_signed_agent_card(agent_id: str, request: Request) -> dict[str, Any]:
+        """Signed per-agent Agent Card (A2A v1.0 cryptographic identity)."""
+        if not is_valid_agent_id(agent_id):
+            return json_error(code="not_found", message="Agent account not found", status_code=404)
+        account = get_agent_account(request.app.state.root, agent_id)
+        if not account or not is_active_agent_status(account.get("status")):
+            return json_error(code="not_found", message="Agent account not found", status_code=404)
+        from arclya2a.agents.agent_identity import build_per_agent_card
+
+        base_url = resolve_request_public_url(request)
+        return build_per_agent_card(account, base_url=base_url, root=request.app.state.root)
+
     @router.get("/agents/{agent_id}")
     async def agents_public_profile(agent_id: str, request: Request) -> dict[str, Any]:
         """Public profile view for a registered external agent."""
@@ -1062,4 +1094,5 @@ def register_agent_account_routes(router: APIRouter) -> None:
         return detailed_public_profile(
             account,
             profile_url=f"{base_url}/agents/{agent_id}",
+            root=request.app.state.root,
         )
