@@ -124,10 +124,11 @@ curl -s https://your-domain/status | jq '.platform_summary, .launch_readiness'
 | Operational Monitoring | Ready | `/status` + `component_health` + HTML status page |
 | Production Email Delivery | **Live on Render** | SMTP healthy (`component_health.email.status: healthy`) |
 | Operator Key | **Live on Render** | `launch_readiness.ready: true` on production |
-| Latest Code Deploy | **Pending push** | Local guide v2.3.0 + service catalog not yet on Render (prod v1.9.0) |
-| Launch Smoke Test | Ready to run | After deploy: `python scripts/launch_ready.py` with `ARCLYA_OPERATOR_KEY` |
-| Custom Domain Support | Ready | DNS + `ARCLYA_PUBLIC_URL` after smoke pass |
-| **Overall launch readiness** | **~99%** | Pending: push + deploy, smoke 10/10, `launch_ready.py`, DNS |
+| Latest Code Deploy | **Live** | Commit `5ba4be7` deployed — guide v2.3.0 + service catalog on Render |
+| Production Smoke Test | **Passed** | `python scripts/smoke_production.py` — 10/10 |
+| Launch Smoke Test | **Passed** | `python scripts/launch_ready.py` — 18/18 (register→verify→directory) |
+| Custom Domain Support | Ready | DNS + `ARCLYA_PUBLIC_URL` — only remaining step before public brand |
+| **Overall launch readiness** | **Production ready** | Buy domain when ready; optional: uptime monitoring, Resend sender on custom domain |
 
 ### Your next steps (in order)
 
@@ -332,9 +333,9 @@ curl -s -H "X-Arclya-Operator-Key: $ARCLYA_OPERATOR_KEY" \
 
 | Gap | Priority | Recommendation |
 |-----|----------|----------------|
-| Deploy latest code | **Now** | Push commit to `origin/master`; Render auto-deploys from `render.yaml` |
-| Production smoke test | **After deploy** | `python scripts/smoke_production.py` — expect 10/10 (guide v2.3.0 + service catalog) |
-| Launch smoke test | **After deploy** | `python scripts/launch_ready.py` — register→verify→directory on live host |
+| Deploy latest code | **Done** | `5ba4be7` on Render — guide v2.3.0 + service catalog live |
+| Production smoke test | **Done** | 10/10 on `arclya2a.onrender.com` |
+| Launch smoke test | **Done** | 18/18 — full register→verify→directory flow |
 | Custom domain DNS | **After smoke pass** | Point domain; set `ARCLYA_PUBLIC_URL`; re-run smoke test |
 | Resend sender domain | **Before launch** | Verify sending domain in Resend so `ARCLYA_AGENT_EMAIL_FROM` is accepted |
 | Uptime monitoring | High | Poll `/health`; alert on `degraded` or `launch_ready: false` |

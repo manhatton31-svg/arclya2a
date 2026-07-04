@@ -206,10 +206,16 @@ def resolve_verification_token(
                 if latest.get("verify_link")
                 else None
             )
-            extra_checks.append(
-                ("operator verification-outbox", bool(token), latest.get("delivery", ""))
-            )
-            return token, extra_checks
+            if token:
+                extra_checks.append(
+                    ("operator verification-outbox", True, latest.get("delivery", ""))
+                )
+                return token, extra_checks
+            last_detail = "awaiting background SMTP outbox entry"
+            if attempt < retries:
+                continue
+            extra_checks.append(("operator verification-outbox", False, last_detail))
+            return None, extra_checks
 
         err = parse_api_error(r)
         last_detail = f"status={r.status_code} code={err.get('code')} msg={str(err.get('message', ''))[:120]}"
@@ -335,8 +341,9 @@ def main() -> int:
         api_key = reg["api_key"]
         ev = reg.get("email_verification") or {}
 
-        if ev.get("queued"):
-            time.sleep(3)
+        smtp_queued = ev.get("queued") or ev.get("delivery") == "smtp"
+        if smtp_queued:
+            time.sleep(5)
         else:
             time.sleep(1)
         token, token_checks = resolve_verification_token(
@@ -346,7 +353,7 @@ def main() -> int:
             email_verification=ev,
             operator_key=operator_key,
             manual_token=verify_token,
-            retries=3,
+            retries=8 if smtp_queued else 3,
         )
         for name, ok, detail in token_checks:
             check(name, ok, detail)
@@ -410,10 +417,11 @@ def main() -> int:
             json={"publicly_listed": True},
         )
         listed = r.json() if r.status_code == 200 else {}
+        profile = listed.get("profile") if isinstance(listed.get("profile"), dict) else listed
         check(
             "PATCH /agents/me directory opt-in",
-            r.status_code == 200 and listed.get("publicly_listed") is True,
-            "",
+            r.status_code == 200 and profile.get("publicly_listed") is True,
+            profile.get("listing_note", "") if profile.get("publicly_listed") else "",
         )
 
         r = client.get(f"{base}/agents/directory", params={"q": agent_name, "limit": 20})
