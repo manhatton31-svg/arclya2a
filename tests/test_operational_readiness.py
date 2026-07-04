@@ -89,6 +89,8 @@ def test_health_includes_component_summary(isolated_root):
     assert "email" in health["components"]
     assert "crypto" in health["components"]
     assert "launch_ready" in health
+    assert "email_delivery" in health
+    assert "launch_next_steps" in health
     assert "suspicious_events_24h" in health["external_agents"]
 
 
@@ -120,14 +122,18 @@ def test_status_reflects_registered_agent_metrics(isolated_root):
 
 def test_build_component_health_aggregate(isolated_root, monkeypatch):
     monkeypatch.setenv("ARCLYA_AGENT_EMAIL_DELIVERY", "auto")
-    monkeypatch.setenv("ARCLYA_AGENT_EMAIL_SMTP_URL", "smtp://u:p@mail.example.com:587")
-    monkeypatch.setenv("ARCLYA_AGENT_EMAIL_FROM", "noreply@example.com")
+    monkeypatch.setenv("ARCLYA_AGENT_EMAIL_SMTP_URL", "smtp://resend:re_test@smtp.resend.com:587")
+    monkeypatch.setenv("ARCLYA_AGENT_EMAIL_FROM", "onboarding@example.com")
     monkeypatch.setenv("ARCLYA_PUBLIC_URL", "https://agents.example.com")
     monkeypatch.setenv("ARCLYA_CRYPTO_ENABLED", "1")
     monkeypatch.setenv("ARCLYA_CRYPTO_WALLET_BASE", "0x42387a2723fbd2ed52a4323d568ef501f55b6594")
+    monkeypatch.setenv("ARCLYA_OPERATOR_KEY", "operator-test-key-32chars-minimum")
 
     health = build_component_health(isolated_root)
     assert health["email"]["launch_ready"] is True
+    assert health["email"]["smtp_provider"] == "resend"
     assert health["crypto"]["launch_ready"] is True
+    assert health["operator_key_configured"] is True
     assert health["launch_ready"] is True
     assert health["overall"] == "ready"
+    assert health["next_steps"]

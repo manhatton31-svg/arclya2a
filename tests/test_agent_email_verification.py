@@ -188,6 +188,7 @@ def test_invalid_token_rejected(isolated_accounts_root):
     client = TestClient(create_app(isolated_accounts_root))
     resp = client.post("/agents/verify-email", json={"token": "ev_invalid_token"})
     assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "verification_failed"
 
 
 def test_expired_token_rejected(isolated_accounts_root):
@@ -209,7 +210,10 @@ def test_expired_token_rejected(isolated_accounts_root):
 
     resp = client.post("/agents/verify-email", json={"token": token})
     assert resp.status_code == 422
-    assert "expired" in resp.json()["error"]["message"].lower()
+    err = resp.json()["error"]
+    assert err["code"] == "verification_failed"
+    assert err["details"]["error_code"] == "token_expired"
+    assert "resend" in err["details"]["next_step"].lower()
 
 
 def test_email_verification_audited(isolated_accounts_root):
@@ -271,10 +275,45 @@ def test_operator_verification_outbox(isolated_accounts_root, monkeypatch):
         headers={"X-Arclya-Operator-Key": "operator-test-key"},
     )
     assert resp.status_code == 200
-    latest = resp.json()["latest"]
+    body = resp.json()
+    latest = body["latest"]
     assert latest["agent_id"] == agent_id
     assert latest["token"].startswith("ev_")
     assert "/agents/verify-email?token=" in latest["verify_link"]
+    assert body["pending_count"] >= 1
+    assert any(row["agent_id"] == agent_id for row in body["pending_verifications"])
+
+
+def test_verification_status_includes_pending_state(isolated_accounts_root):
+    client = TestClient(create_app(isolated_accounts_root))
+    email = f"pending_{uuid.uuid4().hex[:6]}@example.com"
+    reg = client.post(
+        "/agents/register",
+        json=registration_payload(agent_name=_unique_name(), email=email),
+    )
+    api_key = reg.json()["api_key"]
+    me = client.get("/agents/me", headers={"X-Arclya-Key": api_key}).json()
+    status = me["email_verification"]
+    assert status["verification_state"] == "pending"
+    assert status["directory_ready"] is False
+    assert "resend" in status["next_step"].lower()
+
+
+def test_verify_email_structured_error_for_used_token(isolated_accounts_root):
+    client = TestClient(create_app(isolated_accounts_root))
+    email = f"used_{uuid.uuid4().hex[:6]}@example.com"
+    reg = client.post(
+        "/agents/register",
+        json=registration_payload(agent_name=_unique_name(), email=email),
+    )
+    agent_id = reg.json()["agent_id"]
+    token = latest_outbox_token(isolated_accounts_root, agent_id=agent_id)
+    assert token
+    first = client.post("/agents/verify-email", json={"token": token})
+    assert first.status_code == 200
+    second = client.post("/agents/verify-email", json={"token": token})
+    assert second.status_code == 422
+    assert second.json()["error"]["details"]["error_code"] == "token_already_used"
 
 
 def test_directory_requirement_disabled(isolated_accounts_root, monkeypatch):

@@ -20,6 +20,25 @@ def isolated_root(tmp_path, monkeypatch):
     (tmp_path / "agents").mkdir()
     (tmp_path / "prompts").mkdir()
     (tmp_path / "pricing").mkdir()
+    (tmp_path / "pricing" / "pricing_menu.json").write_text(
+        json.dumps(
+            {
+                "version": "1.0.0",
+                "currency": "USD",
+                "margin_targets": {
+                    "minimum_percent": 15,
+                    "target_percent": 35,
+                    "veto_threshold_percent": 10,
+                },
+                "model_costs_per_1k_tokens": {},
+                "service_tiers": {
+                    "outreach_sequence": {"base_price_usd": 49.0, "min_margin_percent": 20},
+                },
+                "agent_overrides": {},
+            }
+        ),
+        encoding="utf-8",
+    )
     (tmp_path / "config" / "core.json").write_text(
         json.dumps(
             {
@@ -57,6 +76,8 @@ def test_hangout_discovery(isolated_root):
     data = resp.json()
     assert data["name"] == "Arclya Agent Hangout"
     assert data["constitutional"]["inference"] == "xai_only"
+    assert data["constitutional"]["qc_gate"] == "final_arbiter"
+    assert "guardrail_enforcement" in data["constitutional"]
     assert data["handoff_signals"]["task_delegation"] is True
     assert data["payments"]["currency"] == "USDC"
     assert data["payments"]["x402_compatible"] is True
@@ -134,12 +155,15 @@ def test_deal_room_lifecycle(isolated_root):
             "close_type": "lead_routing_commitment",
             "lead_routing_confirmed": True,
             "confidence": 95,
+            "revenue_usd": 49.0,
+            "cost_usd": 8.0,
         },
     )
     assert close.status_code == 200
     closed = close.json()["deal_room"]
     assert closed["status"] == "closed"
     assert closed["lead_routing_confirmed"] is True
+    assert closed["constitutional_verification"]["passed"] is True
 
     mine = client.get(
         "/agents/hangout/deal-rooms",
@@ -233,9 +257,12 @@ def test_marketplace_offer_and_anti_duplication(isolated_root):
     complete = client.post(
         f"/agents/hangout/marketplace/{listing_id}/complete",
         headers={"X-Arclya-Key": api_key},
+        json={"revenue_usd": 25.0, "cost_usd": 3.0},
     )
     assert complete.status_code == 200
-    assert complete.json()["listing"]["status"] == "completed"
+    completed = complete.json()["listing"]
+    assert completed["status"] == "completed"
+    assert completed["constitutional_verification"]["passed"] is True
 
 
 def test_reputation_score_and_profile_integration(isolated_root):

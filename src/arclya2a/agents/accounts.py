@@ -399,12 +399,19 @@ def _agent_capability_set(row: dict[str, Any]) -> set[str]:
 def _agent_matches_capabilities(row: dict[str, Any], required: list[str]) -> bool:
     if not required:
         return True
+    from arclya2a.agents.capability_discovery import expand_capability_one_way
+
     agent_caps = _agent_capability_set(row)
-    return all(req in agent_caps for req in required)
+    for req in required:
+        if not (agent_caps & expand_capability_one_way(req)):
+            return False
+    return True
 
 
 def compute_search_relevance(row: dict[str, Any], query: str) -> float:
     """Score 0–1 for text search across name, description, and capabilities."""
+    from arclya2a.agents.capability_discovery import expand_capability, query_expands_to_capabilities
+
     q = (query or "").strip().lower()
     if not q:
         return 0.0
@@ -413,6 +420,7 @@ def compute_search_relevance(row: dict[str, Any], query: str) -> float:
     desc = str(row.get("description", "")).lower()
     cap_list = [str(c).lower() for c in row.get("capabilities", [])]
     caps_text = " ".join(cap_list)
+    cap_set = set(cap_list)
 
     score = 0.0
 
@@ -423,6 +431,12 @@ def compute_search_relevance(row: dict[str, Any], query: str) -> float:
     if q in caps_text or any(q in cap for cap in cap_list):
         score += 7.0
 
+    for related_cap in query_expands_to_capabilities(q):
+        if related_cap in cap_set:
+            score += 8.0
+        elif related_cap in desc:
+            score += 3.0
+
     tokens = [t for t in re.split(r"\s+", q) if len(t) >= 2]
     for token in tokens:
         if token in name:
@@ -431,6 +445,9 @@ def compute_search_relevance(row: dict[str, Any], query: str) -> float:
             score += 2.5
         if token in desc:
             score += 1.0
+        for related in expand_capability(token):
+            if related in cap_set:
+                score += 2.0
 
     denominator = max(10.0, len(tokens) * 6.5 + 5.0)
     return round(min(1.0, score / denominator), 4)
@@ -440,15 +457,22 @@ def compute_capability_match_score(
     row: dict[str, Any],
     viewer_capabilities: list[str],
 ) -> float:
-    """Score 0–1 based on overlapping capabilities with the viewing agent."""
-    viewer = {str(c).lower() for c in viewer_capabilities if str(c).strip()}
+    """Score 0–1 based on overlapping capabilities with the viewing agent (synonym-aware)."""
+    from arclya2a.agents.capability_discovery import expand_capability_one_way
+
+    viewer: set[str] = set()
+    for cap in viewer_capabilities:
+        viewer |= expand_capability_one_way(str(cap))
     if not viewer:
         return 0.0
     agent_caps = _agent_capability_set(row)
-    shared = viewer & agent_caps
+    expanded_agent: set[str] = set()
+    for cap in agent_caps:
+        expanded_agent |= expand_capability_one_way(cap)
+    shared = viewer & expanded_agent
     if not shared:
         return 0.0
-    union = viewer | agent_caps
+    union = viewer | expanded_agent
     jaccard = len(shared) / len(union)
     coverage = len(shared) / len(viewer)
     return round(min(1.0, (coverage * 0.6) + (jaccard * 0.4)), 4)

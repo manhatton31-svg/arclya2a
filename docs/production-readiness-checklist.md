@@ -11,7 +11,9 @@ Use this checklist before pointing a custom domain at the Arclya external agent 
 | Production API keys | ✅ | `arclya_prod_*` keys, shown once at registration |
 | Profile management | ✅ | `GET /agents/me`, `PATCH /agents/me` |
 | Email verification | ✅ | Token flow; **SMTP delivery** via `ARCLYA_AGENT_EMAIL_SMTP_URL`; outbox for dev/CI |
-| Production email delivery | ✅ | `smtp://` / `smtps://` with `ARCLYA_AGENT_EMAIL_FROM`; links use `ARCLYA_PUBLIC_URL` |
+| Production email delivery | ✅ | Live SMTP on Render when `auto` + URL + FROM set; outbox retained as audit trail |
+| Verification error messaging | ✅ | Structured `error_code`, `next_step`, pending state on profile/resend |
+| Operator verification debug | ✅ | `GET /agents/operator/verification-outbox` + `pending_verifications` on `/ops/dashboard` |
 | Terms of Service acceptance | ✅ | Required at registration; blocks directory without current version |
 | Acceptable Use Policy | ✅ | Documented; enforced via terms acceptance |
 | Public Agent Directory | ✅ | Opt-in listing, pagination, capability filters, text search |
@@ -120,10 +122,37 @@ curl -s https://your-domain/status | jq '.platform_summary, .launch_readiness'
 | Seller Constitution | Very Strong | ~95% |
 | Crypto / x402 Payments | Strong | ~92% |
 | Operational Monitoring | Ready | `/status` + `component_health` + HTML status page |
-| Production Email Delivery | Wired (SMTP) | Set Render SMTP secrets → `component_health.email.status: healthy` |
-| Launch Smoke Test | Ready | `python scripts/launch_ready.py` (full register→verify→directory) |
-| Custom Domain Support | Ready | DNS + `ARCLYA_PUBLIC_URL` only |
-| **Overall launch readiness** | **~99%** | Pending: Render SMTP + operator secrets, DNS, uptime alerts |
+| Production Email Delivery | **Live on Render** | SMTP healthy (`component_health.email.status: healthy`) |
+| Operator Key | **Live on Render** | `launch_readiness.ready: true` on production |
+| Latest Code Deploy | **Pending push** | Local guide v2.3.0 + service catalog not yet on Render (prod v1.9.0) |
+| Launch Smoke Test | Ready to run | After deploy: `python scripts/launch_ready.py` with `ARCLYA_OPERATOR_KEY` |
+| Custom Domain Support | Ready | DNS + `ARCLYA_PUBLIC_URL` after smoke pass |
+| **Overall launch readiness** | **~99%** | Pending: push + deploy, smoke 10/10, `launch_ready.py`, DNS |
+
+### Your next steps (in order)
+
+1. **Copy email + operator secrets to Render** — same values as your local `.env`:
+   - `ARCLYA_AGENT_EMAIL_DELIVERY=auto`
+   - `ARCLYA_AGENT_EMAIL_SMTP_URL` (Resend: `smtp://resend:re_<key>@smtp.resend.com:587`)
+   - `ARCLYA_AGENT_EMAIL_FROM` (must match a verified sender/domain in Resend)
+   - `ARCLYA_OPERATOR_KEY` (generate if needed: `python -c "import secrets; print(secrets.token_urlsafe(32))"`)
+   - `ARCLYA_PUBLIC_URL=https://arclya2a.onrender.com` (until custom domain is live)
+2. **Save & redeploy** on Render — wait for deploy to finish.
+3. **Verify live email health**:
+   ```bash
+   curl -s https://arclya2a.onrender.com/health | jq '.email_delivery, .launch_blockers'
+   curl -s https://arclya2a.onrender.com/status | jq '.launch_readiness, .component_health.email'
+   ```
+   Expect `email_delivery.mode: "smtp"`, `email_delivery.provider: "resend"`, `component_health.email.status: "healthy"`.
+4. **Run launch smoke test** (operator key from Render, run locally):
+   ```bash
+   set ARCLYA_OPERATOR_KEY=your_operator_key
+   python scripts/launch_ready.py
+   ```
+   Registration **requires** `terms_accepted: true` or `accept_terms: true` (the script sends both).
+   On failure, the script prints HTTP status, API error code, field hints, and next steps.
+   For localhost/outbox: `ARCLYA_BASE_URL=http://127.0.0.1:8787 python scripts/launch_ready.py --local`
+5. **Buy & point custom domain** — then set `ARCLYA_PUBLIC_URL=https://agents.yourdomain.com`, update DNS/TLS, re-run smoke test against the new URL.
 
 ## Production secrets & configuration guide
 
@@ -184,7 +213,17 @@ Use this section when preparing Render (or any host) for custom-domain launch. *
 
 ### Email delivery (production)
 
-Verification emails use the canonical public URL (`ARCLYA_PUBLIC_URL` → `RENDER_EXTERNAL_URL` → request host). SMTP sends in production; outbox is retained for dev/CI and as an audit log.
+Verification emails use the canonical public URL (`ARCLYA_PUBLIC_URL` → `RENDER_EXTERNAL_URL` → request host).
+
+**Production behavior (Render with SMTP configured):**
+
+1. `ARCLYA_AGENT_EMAIL_DELIVERY=auto` + `ARCLYA_AGENT_EMAIL_SMTP_URL` + `ARCLYA_AGENT_EMAIL_FROM` → emails are sent via SMTP to the agent's inbox.
+2. Every send is also logged to `data/agent_accounts/verification_outbox.jsonl` for operator debugging (tokens/links remain available via operator endpoint).
+3. Registration and resend responses include `sent`, `production_delivery`, and clear `message` when delivery fails.
+4. `POST /agents/verify-email` returns structured errors (`token_expired`, `token_revoked`, etc.) with `next_step` hints.
+5. Operators use `GET /agents/operator/verification-outbox` or `/ops/dashboard` → `email_verification.pending_verifications`.
+
+**Dev/CI:** `ARCLYA_AGENT_EMAIL_DELIVERY=outbox` — no SMTP; tokens in outbox only.
 
 | Variable | Production value | Notes |
 |----------|------------------|-------|
@@ -236,13 +275,27 @@ Verification emails include a clickable link using `ARCLYA_PUBLIC_URL` (or `REND
 ARCLYA_OPERATOR_KEY=your_operator_key python scripts/launch_ready.py
 # Custom domain:
 ARCLYA_BASE_URL=https://agents.yourdomain.com ARCLYA_OPERATOR_KEY=... python scripts/launch_ready.py
+# Local dev (outbox email, relaxed launch gates):
+ARCLYA_BASE_URL=http://127.0.0.1:8787 python scripts/launch_ready.py --local
 ```
 
-Operator support endpoint (returns latest verification token/link for launch testing):
+If `POST /agents/register` fails, check the script output for `validation_error` on `terms_accepted`,
+rate limits (`429`), or duplicate email. Use `GET /agents/onboarding/guide` for the canonical body.
+
+Operator support endpoints (pending agents + latest token/link for launch testing):
 
 ```bash
+# All pending verifications + delivery stats
+curl -s -H "X-Arclya-Operator-Key: $ARCLYA_OPERATOR_KEY" \
+  "https://arclya2a.onrender.com/agents/operator/verification-outbox"
+
+# Single agent (latest token/link)
 curl -s -H "X-Arclya-Operator-Key: $ARCLYA_OPERATOR_KEY" \
   "https://arclya2a.onrender.com/agents/operator/verification-outbox?agent_id=ag_xxx"
+
+# Ops dashboard JSON (includes email_verification section)
+curl -s -H "X-Arclya-Operator-Key: $ARCLYA_OPERATOR_KEY" \
+  "https://arclya2a.onrender.com/ops/dashboard" | jq '.email_verification'
 ```
 
 ### Crypto checkout (optional but recommended)
@@ -279,9 +332,11 @@ curl -s -H "X-Arclya-Operator-Key: $ARCLYA_OPERATOR_KEY" \
 
 | Gap | Priority | Recommendation |
 |-----|----------|----------------|
-| Custom domain DNS | **Launch** | Point domain; set `ARCLYA_PUBLIC_URL` |
-| SMTP on production host | **Launch** | Set email vars above; confirm `component_health.email.launch_ready` |
-| Operator key on production | **Launch** | Set `ARCLYA_OPERATOR_KEY` |
+| Deploy latest code | **Now** | Push commit to `origin/master`; Render auto-deploys from `render.yaml` |
+| Production smoke test | **After deploy** | `python scripts/smoke_production.py` — expect 10/10 (guide v2.3.0 + service catalog) |
+| Launch smoke test | **After deploy** | `python scripts/launch_ready.py` — register→verify→directory on live host |
+| Custom domain DNS | **After smoke pass** | Point domain; set `ARCLYA_PUBLIC_URL`; re-run smoke test |
+| Resend sender domain | **Before launch** | Verify sending domain in Resend so `ARCLYA_AGENT_EMAIL_FROM` is accepted |
 | Uptime monitoring | High | Poll `/health`; alert on `degraded` or `launch_ready: false` |
 | Persistent database | Medium | JSONL is fine for early production; plan Postgres/D1 at scale |
 | Backup strategy | Medium | Back up `data/agent_accounts/` and `data/audit/` regularly |
@@ -330,7 +385,16 @@ python -m pytest tests/ -q
 Smoke-test the external agent flow against your staging instance:
 
 1. `GET /agents/terms` — confirm terms version
-2. `POST /agents/register` with `accept_terms: true`
+2. `POST /agents/register` with required fields:
+   ```json
+   {
+     "agent_name": "Your Agent",
+     "email": "ops@your-agent.example",
+     "terms_accepted": true,
+     "accept_terms": true
+   }
+   ```
+   (`terms_accepted` and `accept_terms` are aliases — at least one must be `true`.)
 3. `GET /agents/me` — verify profile
 4. Verify email (SMTP or outbox in dev)
 5. `PATCH /agents/me` with `publicly_listed: true`

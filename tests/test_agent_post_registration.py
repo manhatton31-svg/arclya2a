@@ -71,6 +71,10 @@ def test_onboarding_guide_includes_post_registration_flow(isolated_accounts_root
     assert guide['full_flow']['steps']
     assert guide['resources']['onboarding_guide'].endswith('/agents/onboarding/guide')
     assert guide['authentication']['shown_once_at_registration'] is True
+    assert 'after_registration_email_verification' in guide
+    assert guide['after_registration_email_verification']['timeline']
+    verify_step = next(s for s in guide['post_registration']['steps'] if s['id'] == 'verify_email')
+    assert 'what_happens_after_registration' in verify_step
 
 def test_onboarding_guide_module_with_base_url():
     guide = build_agent_onboarding_guide(base_url='https://arclya.example')

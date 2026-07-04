@@ -171,26 +171,88 @@ def complete_marketplace_listing(
     *,
     listing_id: str,
     completed_by_agent_id: str,
+    handoff_run_id: str | None = None,
+    orchestrator_deal_id: str | None = None,
+    revenue_usd: float | None = None,
+    cost_usd: float | None = None,
+    payment_id: str | None = None,
+    service_tier: str = "outreach_sequence",
 ) -> dict[str, Any]:
     listings = latest_by_id(load_records(root, MARKETPLACE_FILE), "listing_id")
     row = listings.get(listing_id)
     if not row:
         raise ValueError("listing not found")
+
+    price = row.get("price_usd")
+    paid_close = price is not None and float(price) > 0
+    payment_confirmed = False
+    if payment_id:
+        from arclya2a.payments.crypto import get_crypto_payment
+
+        payment = get_crypto_payment(root, payment_id)
+        if not payment:
+            raise ValueError("payment not found")
+        if payment.get("status") != "confirmed":
+            raise ValueError("payment must be confirmed before completing a paid listing")
+        if payment.get("deal_id") and payment.get("deal_id") != listing_id:
+            raise ValueError("payment deal_id does not match listing")
+        payment_confirmed = True
+        paid_close = True
+        if revenue_usd is None:
+            revenue_usd = float(payment.get("amount_usd") or price or 0)
+
+    constitutional_verification: dict[str, Any] | None = None
+    if paid_close:
+        from arclya2a.agents.hangout_guardrails import require_hangout_guardrails
+        from arclya2a.agents.reputation import guardrail_strictness
+
+        strict = guardrail_strictness(root, completed_by_agent_id)
+        min_conf = float(strict.get("min_close_confidence", 85.0))
+        effective_revenue = revenue_usd if revenue_usd is not None else float(price or 0)
+        effective_cost = cost_usd
+        if effective_cost is None and effective_revenue > 0:
+            effective_cost = round(effective_revenue * 0.15, 2)
+        guardrail = require_hangout_guardrails(
+            root,
+            agent_id=completed_by_agent_id,
+            context_label="Paid marketplace completion",
+            deal_id=orchestrator_deal_id or listing_id,
+            handoff_run_id=handoff_run_id,
+            revenue_usd=effective_revenue,
+            cost_usd=effective_cost,
+            service_tier=service_tier,
+            message_count=1,
+            close_confidence=min_conf,
+            min_close_confidence=min_conf,
+            payment_confirmed=payment_confirmed,
+        )
+        constitutional_verification = guardrail.to_record()
+
     row["status"] = "completed"
     row["completed_by"] = completed_by_agent_id
+    row["constitutional_verification"] = constitutional_verification
+    if payment_id:
+        row["payment_id"] = payment_id
     row["updated_at"] = _now()
     append_record(root, MARKETPLACE_FILE, row)
 
-    from arclya2a.agents.reputation import record_reputation_event
+    if not paid_close or (constitutional_verification and constitutional_verification.get("passed")):
+        from arclya2a.agents.reputation import record_reputation_event
 
-    record_reputation_event(
-        root,
-        agent_id=row.get("poster_agent_id"),
-        event_type="marketplace_complete",
-        delta=4.0,
-        source="marketplace",
-        metadata={"listing_id": listing_id},
-    )
+        record_reputation_event(
+            root,
+            agent_id=row.get("poster_agent_id"),
+            event_type="marketplace_complete",
+            delta=4.0 if paid_close else 2.0,
+            source="marketplace",
+            metadata={
+                "listing_id": listing_id,
+                "constitutional_guardrail_passed": bool(
+                    constitutional_verification and constitutional_verification.get("passed")
+                ),
+                "paid_close": paid_close,
+            },
+        )
     return _public_listing(row)
 
 
@@ -206,6 +268,7 @@ def _public_listing(row: dict[str, Any]) -> dict[str, Any]:
         "package_id": row.get("package_id"),
         "status": row.get("status"),
         "payment": row.get("payment"),
+        "constitutional_verification": row.get("constitutional_verification"),
         "created_at": row.get("created_at"),
         "updated_at": row.get("updated_at"),
     }

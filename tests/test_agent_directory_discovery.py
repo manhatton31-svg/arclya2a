@@ -234,6 +234,21 @@ def test_compute_match_score_module():
     assert 0 < score < 1
 
 
+def test_compute_match_score_synonym_aware():
+    row = {"capabilities": ["a2a_closing", "objection_handling"]}
+    score = compute_capability_match_score(row, ["closer"])
+    assert score > 0
+
+
+def test_search_relevance_finds_closer_synonym():
+    row = {
+        "agent_name": "RouteBot",
+        "description": "Lead routing partner",
+        "capabilities": ["a2a_closing"],
+    }
+    assert compute_search_relevance(row, "closer") > 0
+
+
 def test_agent_card_advertises_discovery(isolated_accounts_root):
     client = TestClient(create_app(isolated_accounts_root))
     card = client.get("/.well-known/agent-card.json").json()
@@ -244,3 +259,5 @@ def test_agent_card_advertises_discovery(isolated_accounts_root):
     assert "agent_directory_discovery" in card["platform"]["features"]
     doc_rels = {d.get("rel") for d in card.get("documentation", [])}
     assert "agent-directory-recommended" in doc_rels
+    assert "agent-service-catalog" in doc_rels
+    assert card["platform"]["agent_directory_capabilities"].get("capability_synonyms")

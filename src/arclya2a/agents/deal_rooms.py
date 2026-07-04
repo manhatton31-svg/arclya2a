@@ -121,10 +121,12 @@ def _public_room(room: dict[str, Any], *, include_messages: bool = False) -> dic
         "created_at": room.get("created_at"),
         "updated_at": room.get("updated_at"),
         "message_count": len(room.get("messages") or []),
+        "constitutional_verification": room.get("constitutional_verification"),
         "handoff_signals": {
             "constitutional_chain": "entry → profit_guardrail → final_arbiter",
             "task_delegation": True,
             "confidence_required": True,
+            "guardrail_enforced_on_commitment": True,
         },
     }
     if include_messages:
@@ -187,6 +189,11 @@ def close_deal_room(
     lead_routing_confirmed: bool = False,
     cta_url: str | None = None,
     confidence: float | None = None,
+    handoff_run_id: str | None = None,
+    orchestrator_deal_id: str | None = None,
+    revenue_usd: float | None = None,
+    cost_usd: float | None = None,
+    service_tier: str = "outreach_sequence",
 ) -> dict[str, Any]:
     """Close a deal room with A2A handoff signals (lead routing commitment preferred)."""
     if close_type not in _VALID_CLOSE_TYPES:
@@ -206,18 +213,41 @@ def close_deal_room(
     conf = min_conf if confidence is None else max(0.0, min(100.0, float(confidence)))
     if conf < min_conf:
         raise ValueError(f"close confidence must be at least {min_conf} for your trust tier")
+
+    constitutional_verification: dict[str, Any] | None = None
+    requires_guardrails = bool(lead_routing_confirmed and close_type == "lead_routing_commitment")
+    if requires_guardrails:
+        from arclya2a.agents.hangout_guardrails import require_hangout_guardrails
+
+        deal_ref = orchestrator_deal_id or (room.get("handoff_context") or {}).get("deal_id")
+        guardrail = require_hangout_guardrails(
+            root,
+            agent_id=agent_id,
+            context_label="Lead routing commitment",
+            deal_id=str(deal_ref) if deal_ref else None,
+            handoff_run_id=handoff_run_id,
+            revenue_usd=revenue_usd,
+            cost_usd=cost_usd,
+            service_tier=service_tier,
+            message_count=len(room.get("messages") or []),
+            close_confidence=conf,
+            min_close_confidence=min_conf,
+        )
+        constitutional_verification = guardrail.to_record()
+
     room["status"] = "closed"
     room["close_type"] = close_type
     room["lead_routing_confirmed"] = bool(lead_routing_confirmed)
     room["closed_by"] = agent_id
     room["close_confidence"] = conf
+    room["constitutional_verification"] = constitutional_verification
     room["updated_at"] = _now()
     if cta_url:
         room["cta_url"] = str(cta_url).strip()[:512]
 
     append_record(root, DEAL_ROOMS_FILE, room)
 
-    if lead_routing_confirmed and close_type == "lead_routing_commitment":
+    if requires_guardrails and constitutional_verification and constitutional_verification.get("passed"):
         from arclya2a.agents.reputation import record_reputation_event
 
         for pid in room.get("participants") or []:
@@ -227,7 +257,12 @@ def close_deal_room(
                 event_type="deal_room_close",
                 delta=5.0,
                 source="deal_rooms",
-                metadata={"room_id": room_id, "closed_by": agent_id},
+                metadata={
+                    "room_id": room_id,
+                    "closed_by": agent_id,
+                    "constitutional_guardrail_passed": True,
+                    "guardrail_method": constitutional_verification.get("method"),
+                },
             )
 
     return _public_room(room, include_messages=True)

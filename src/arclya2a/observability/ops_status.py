@@ -176,7 +176,11 @@ def build_ops_status(root: Path) -> dict[str, Any]:
         "launch_readiness": {
             "ready": component_health.get("launch_ready", False),
             "overall": component_health.get("overall"),
+            "email_launch_ready": component_health.get("email_launch_ready", False),
+            "crypto_launch_ready": component_health.get("crypto_launch_ready", False),
+            "operator_key_configured": component_health.get("operator_key_configured", False),
             "blocking_issues": component_health.get("blocking_issues", []),
+            "next_steps": component_health.get("next_steps", []),
         },
         "learning": learning,
         "tools": tool_health,

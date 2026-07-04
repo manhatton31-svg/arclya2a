@@ -38,6 +38,8 @@ from arclya2a.agents.terms import (
     build_terms_info,
     current_terms_version,
 )
+from arclya2a.agents.capability_discovery import CAPABILITY_SYNONYMS
+
 from arclya2a.payments.packages import (
     AGENT_PAYMENTS_DOC_URL,
     build_agent_payments_discovery,
@@ -57,6 +59,9 @@ def build_agent_card(*, root: Path, base_url: str, version: str, platform_name: 
             "name": a["name"],
             "description": a["role_card"],
             "tags": a.get("capabilities", []),
+            "success_metrics": a.get("success_metrics", {}),
+            "good_enough": a.get("good_enough"),
+            "handoff_targets": a.get("handoff_targets", []),
         }
         for a in registry["agents"]
     ]
@@ -99,7 +104,10 @@ def build_agent_card(*, root: Path, base_url: str, version: str, platform_name: 
             "agent_directory",
             "agent_directory_pagination",
             "agent_directory_discovery",
+            "agent_directory_capability_synonyms",
             "agent_directory_recommendations",
+            "agent_service_catalog",
+            "machine_readable_discovery",
             "agent_endpoint_rate_limiting",
             "agent_profile_input_validation",
             "agent_action_audit",
@@ -137,7 +145,13 @@ def build_agent_card(*, root: Path, base_url: str, version: str, platform_name: 
                 "endpoint": "GET /agents/recommended",
                 "directory_flag": "recommended=true",
                 "requires_auth": True,
-                "basis": "overlapping_capabilities",
+                "basis": "overlapping_capabilities_synonym_aware",
+            },
+            "capability_synonyms": CAPABILITY_SYNONYMS,
+            "search_examples": {
+                "closer": ["closing", "a2a_closing", "objection_handling"],
+                "recruiter": ["recruitment", "agent_recruitment"],
+                "lead_routing": ["lead_routing_commitment", "a2a_handoff"],
             },
             "filters": ["capability", "q", "recommended"],
             "query_params": [
@@ -303,7 +317,17 @@ def build_agent_card(*, root: Path, base_url: str, version: str, platform_name: 
                 "living_prompts": True,
                 "prompt_caching": True,
                 "margin_guardrail": "profit_guardrail",
+                "qc_gate": "final_arbiter",
                 "handoff_protocol": "strong_handoff_v1",
+                "guardrail_enforcement": {
+                    "deal_room_lead_routing_commitment": (
+                        "Requires orchestrator run with qc_passed=true or lightweight margin+QC check at close"
+                    ),
+                    "marketplace_paid_close": (
+                        "Requires orchestrator run with qc_passed=true or lightweight margin check at complete"
+                    ),
+                    "reputation_weighting": "constitutional_close_count boosts trust score",
+                },
             },
         },
         "x402_v2": {
@@ -405,6 +429,49 @@ def build_agent_card(*, root: Path, base_url: str, version: str, platform_name: 
             "(destination_link + affiliate_code CTA). Deal closes on lead_routing_commitment, "
             "not on signup or payment."
         ),
+        "service_catalog": {
+            "endpoint": "GET /agents/services",
+            "alternate_endpoint": "GET /discovery/services",
+            "machine_readable": True,
+            "filter_params": ["capability", "q"],
+            "includes": [
+                "platform_self_description",
+                "services_pricing_success_metrics",
+                "constitutional_guarantees",
+                "x402_payment_signals",
+                "trust_signals",
+                "seller_agent_registry",
+            ],
+        },
+        "discoverability": {
+            "machine_readable_catalog": f"{public_base}/agents/services",
+            "onboarding_guide": f"{public_base}/agents/onboarding/guide",
+            "agent_directory": f"{public_base}/agents/directory",
+            "problems_we_solve": [
+                "Seller onboarding with validated product profile",
+                "Partner recruitment for warm lead routing",
+                "A2A closes with lead_routing_commitment",
+                "Constitutional margin + QC on every production handoff",
+                "USDC service checkout (x402-compatible)",
+                "Agent Hangout for negotiation and reputation",
+            ],
+            "for_agents_searching": {
+                "closer": f"{public_base}/agents/services?capability=closer",
+                "recruiter": f"{public_base}/agents/services?capability=recruiter",
+                "lead_routing": f"{public_base}/agents/services?capability=lead_routing",
+            },
+        },
+        "reputation_platform": {
+            "trust_scoring_endpoint": "GET /agents/{agent_id}/reputation",
+            "directory_sort": "trust_score_desc",
+            "factors": [
+                "email_verified",
+                "constitutional_close_count",
+                "deal_room_closes",
+                "marketplace_completions",
+            ],
+            "constitutional_closes_weighted": True,
+        },
     }
     if payments_block is not None:
         platform_block["payments"] = payments_block
@@ -456,8 +523,20 @@ def build_agent_card(*, root: Path, base_url: str, version: str, platform_name: 
             },
             "payments": {
                 "x402_compatible": True,
+                "x402_version": 2,
                 "currency": "USDC",
                 "checkout": f"{public_base}/payments/crypto/checkout",
+                "networks_endpoint": f"{public_base}/payments/crypto/networks",
+                "packages_endpoint": f"{public_base}/payments/crypto/packages",
+                "facilitators_endpoint": f"{public_base}/payments/crypto/x402/facilitators",
+                "schemes": ["exact", "deferred", "batch"],
+            },
+            "compliance": {
+                "signed_agent_card": True,
+                "agent_card_verify": f"{public_base}/.well-known/agent-card/verify",
+                "per_agent_cards": f"{public_base}/agents/{{agent_id}}/agent-card.json",
+                "handoff_protocol": "strong_handoff_v1",
+                "spec_references": ["A2A Agent Card 2026.1", "x402 V2"],
             },
         },
         "capabilities": {
@@ -581,6 +660,18 @@ def build_agent_card(*, root: Path, base_url: str, version: str, platform_name: 
                 "href": f"{public_base}/agents/recommended",
             },
             {
+                "rel": "agent-service-catalog",
+                "type": "api",
+                "title": "Machine-readable service catalog for autonomous agents",
+                "href": f"{public_base}/agents/services",
+            },
+            {
+                "rel": "discovery-services",
+                "type": "api",
+                "title": "Service catalog (discovery alias)",
+                "href": f"{public_base}/discovery/services",
+            },
+            {
                 "rel": "agent-public-profile",
                 "type": "api",
                 "title": "Public agent profile by ID",
@@ -683,6 +774,8 @@ def build_agent_card(*, root: Path, base_url: str, version: str, platform_name: 
             "platform_status_page": f"{public_base}/platform/status",
             "agent_directory": f"{public_base}/agents/directory",
             "agent_directory_recommended": f"{public_base}/agents/recommended",
+            "agent_service_catalog": f"{public_base}/agents/services",
+            "discovery_services": f"{public_base}/discovery/services",
             "agent_directory_list": f"{public_base}/agents",
             "agent_public_profile": f"{public_base}/agents/{{agent_id}}",
             "agent_hangout": f"{public_base}/agents/hangout",

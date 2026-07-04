@@ -101,7 +101,7 @@ def build_status_page_html(*, snapshot: dict[str, Any]) -> str:
   <section>
     <h2>Component health</h2>
     <dl>
-      <dt>Email delivery</dt><dd><span class="badge {_badge_class(email_status)}">{email_status}</span> · mode <code>{email_h.get("delivery_mode_effective", "—")}</code></dd>
+      <dt>Email delivery</dt><dd><span class="badge {_badge_class(email_status)}">{email_status}</span> · mode <code>{email_h.get("delivery_mode_effective", "—")}</code>{f' · provider <code>{email_h.get("smtp_provider")}</code>' if email_h.get("smtp_provider") else ""}</dd>
       <dt>Crypto checkout</dt><dd><span class="badge {_badge_class(crypto_status)}">{crypto_status}</span> · {payments.get("payment_count", 0)} payments · {payments.get("pending_review_count", 0)} pending review</dd>
       <dt>Confirmed USDC</dt><dd>${payments.get("confirmed_total_usd", pay_summary.get("confirmed_total_usd", 0))}</dd>
       <dt>Payments (24h)</dt><dd>{(crypto_h.get("activity_24h") or {}).get("count", 0)}</dd>

@@ -10,15 +10,19 @@ import pytest
 from fastapi.testclient import TestClient
 
 from arclya2a.agents.email_delivery import (
+    classify_smtp_error,
     deliver_plaintext_email,
+    detect_smtp_provider,
     effective_email_delivery_mode,
     parse_smtp_url,
     send_smtp_message,
 )
 from arclya2a.agents.email_verification import (
     build_verification_email_content,
+    queue_agent_email_verification,
     read_outbox_entries,
     send_verification_email,
+    verification_email_uses_background_delivery,
 )
 from arclya2a.server.app import create_app
 from tests.agent_helpers import registration_payload
@@ -120,7 +124,8 @@ def test_registration_smtp_mode_via_http(isolated_root, monkeypatch):
         assert resp.status_code == 200
         ev = resp.json()["email_verification"]
         assert ev["delivery"] == "smtp"
-        assert ev["sent"] is True
+        assert ev["queued"] is True
+        assert ev["sent"] is False
         assert ev["delivery_mode"] == "smtp"
         assert "verify_link" not in ev
         assert ev["status"]["directory_ready"] is False
@@ -164,6 +169,38 @@ def test_smtp_sends_multipart_html(mock_smtp, isolated_root, monkeypatch):
     assert sent.get_content_type() == "multipart/alternative"
 
 
+def test_smtp_background_queue_skips_sync_send(isolated_root, monkeypatch):
+    monkeypatch.setenv("ARCLYA_AGENT_EMAIL_DELIVERY", "smtp")
+    monkeypatch.setenv("ARCLYA_AGENT_EMAIL_SMTP_URL", "smtp://user:pass@localhost:587")
+    monkeypatch.setenv("ARCLYA_AGENT_EMAIL_FROM", "noreply@arclya.example")
+    assert verification_email_uses_background_delivery() is True
+
+    account = {"agent_id": "ag_bg", "agent_name": "Bg", "email": "bg@example.com"}
+    result = queue_agent_email_verification(
+        isolated_root,
+        account=account,
+        base_url="https://launch.arclya.example",
+        deliver_smtp_in_background=True,
+    )
+    assert result is not None
+    assert result["queued"] is True
+    assert result["sent"] is False
+    assert "_token" in result
+    assert read_outbox_entries(isolated_root) == []
+
+
+def test_detect_smtp_provider_resend():
+    assert detect_smtp_provider("smtp://resend:re_x@smtp.resend.com:587") == "resend"
+    assert detect_smtp_provider("smtp://apikey:SG.x@smtp.sendgrid.net:587") == "sendgrid"
+
+
+def test_classify_smtp_auth_error():
+    result = classify_smtp_error("SMTPAuthenticationError: (535, b'Authentication failed')")
+    assert result["error_code"] == "auth_failed"
+    assert "authentication" in result["message"].lower()
+    assert result["next_step"]
+
+
 def test_smtp_failure_returns_sent_false(isolated_root, monkeypatch):
     monkeypatch.setenv("ARCLYA_AGENT_EMAIL_DELIVERY", "smtp")
     monkeypatch.setenv("ARCLYA_AGENT_EMAIL_SMTP_URL", "smtp://user:pass@localhost:587")
@@ -179,5 +216,7 @@ def test_smtp_failure_returns_sent_false(isolated_root, monkeypatch):
         )
         assert result["sent"] is False
         assert result["smtp_error"]
+        assert result.get("error_code") == "connection_failed"
+        assert result.get("next_step")
         outbox = read_outbox_entries(isolated_root)[-1]
         assert outbox.get("smtp_error")

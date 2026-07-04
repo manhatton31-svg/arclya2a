@@ -8,6 +8,8 @@ import sys
 
 import httpx
 
+from arclya2a.agents.onboarding_guide import GUIDE_VERSION
+
 BASE = os.environ.get("ARCLYA_BASE_URL", "https://arclya2a.onrender.com").rstrip("/")
 
 
@@ -62,9 +64,21 @@ def main() -> int:
         else:
             check("x402 facilitators", r.status_code in (200, 503), f"status={r.status_code}")
 
+        r = client.get(f"{BASE}/agents/services")
+        catalog = r.json() if r.status_code == 200 else {}
+        check(
+            "service catalog",
+            r.status_code == 200 and bool(catalog.get("services")),
+            f"services={len(catalog.get('services', []))}",
+        )
+
         r = client.get(f"{BASE}/agents/onboarding/guide")
         guide = r.json() if r.status_code == 200 else {}
-        check("onboarding guide v1.9.0", r.status_code == 200 and guide.get("version") == "1.9.0")
+        check(
+            f"onboarding guide v{GUIDE_VERSION}",
+            r.status_code == 200 and guide.get("version") == GUIDE_VERSION,
+            guide.get("version", ""),
+        )
 
     failed = [c for c in checks if not c[1]]
     print("---")

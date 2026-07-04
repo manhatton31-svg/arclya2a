@@ -63,9 +63,14 @@ def register_hangout_routes(router: APIRouter) -> None:
                 "living_prompts": True,
                 "prompt_caching": True,
                 "margin_guardrail": "profit_guardrail",
+                "qc_gate": "final_arbiter",
                 "handoff_protocol": "strong_handoff_v1",
                 "anti_spam": True,
                 "crypto_first_payments": True,
+                "guardrail_enforcement": {
+                    "deal_room_commitment": "orchestrator_run_or_lightweight_check",
+                    "marketplace_paid_close": "orchestrator_run_or_lightweight_check",
+                },
             },
             "endpoints": {
                 "deal_rooms": f"{base}/agents/hangout/deal-rooms",
@@ -180,6 +185,11 @@ def register_hangout_routes(router: APIRouter) -> None:
                 lead_routing_confirmed=bool(body.get("lead_routing_confirmed", False)),
                 cta_url=body.get("cta_url"),
                 confidence=body.get("confidence"),
+                handoff_run_id=body.get("handoff_run_id"),
+                orchestrator_deal_id=body.get("orchestrator_deal_id") or body.get("deal_id"),
+                revenue_usd=body.get("revenue_usd"),
+                cost_usd=body.get("cost_usd"),
+                service_tier=str(body.get("service_tier", "outreach_sequence")),
             )
         except ValueError as exc:
             return json_error(code="validation_error", message=str(exc), status_code=422)
@@ -312,10 +322,19 @@ def register_hangout_routes(router: APIRouter) -> None:
         if err:
             return err
         try:
+            body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+            if not isinstance(body, dict):
+                body = {}
             listing = complete_marketplace_listing(
                 request.app.state.root,
                 listing_id=listing_id,
                 completed_by_agent_id=account["agent_id"],
+                handoff_run_id=body.get("handoff_run_id"),
+                orchestrator_deal_id=body.get("orchestrator_deal_id") or body.get("deal_id"),
+                revenue_usd=body.get("revenue_usd"),
+                cost_usd=body.get("cost_usd"),
+                payment_id=body.get("payment_id"),
+                service_tier=str(body.get("service_tier", "outreach_sequence")),
             )
         except ValueError as exc:
             return json_error(code="validation_error", message=str(exc), status_code=422)

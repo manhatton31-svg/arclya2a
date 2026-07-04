@@ -138,7 +138,9 @@ def build_public_platform_summary(
             "email_status": (components.get("email") or {}).get("status"),
             "crypto_status": (components.get("crypto") or {}).get("status"),
             "email_delivery": (components.get("email") or {}).get("delivery_mode_effective"),
+            "email_provider": (components.get("email") or {}).get("smtp_provider"),
         },
+        "launch_next_steps": components.get("next_steps", []),
     }
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Query, Request
 from fastapi.responses import JSONResponse
 
 from arclya2a.agents.accounts import (
@@ -62,10 +62,14 @@ from arclya2a.agents.preferences import (
 )
 from arclya2a.agents.terms import build_terms_info
 from arclya2a.agents.email_verification import (
+    VERIFICATION_ERROR_HINTS,
     build_email_verification_status,
+    classify_verification_error,
     directory_requires_email_verification,
     operator_verification_outbox_summary,
     queue_agent_email_verification,
+    run_background_verification_email,
+    verification_email_uses_background_delivery,
     verify_email_token,
 )
 from arclya2a.agents.security import (
@@ -111,6 +115,69 @@ def _operator_id(request: Request) -> str:
         request.headers.get("X-Arclya-Operator-Id", "").strip()
         or "operator"
     )
+
+
+def _schedule_email_verification(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    *,
+    account: dict[str, Any],
+    base_url: str,
+) -> dict[str, Any] | None:
+    """Queue verification email; SMTP delivery runs after the HTTP response."""
+    queued = queue_agent_email_verification(
+        request.app.state.root,
+        account=account,
+        base_url=base_url,
+        deliver_smtp_in_background=verification_email_uses_background_delivery(),
+    )
+    if not queued:
+        return None
+    token = queued.pop("_token", None)
+    if queued.get("queued") and token:
+        background_tasks.add_task(
+            run_background_verification_email,
+            request.app.state.root,
+            account=account,
+            token=token,
+            base_url=base_url,
+        )
+    return queued
+
+
+def _email_verification_api_payload(
+    account: dict[str, Any],
+    email_verification: dict[str, Any],
+) -> dict[str, Any]:
+    """Public email_verification block for register / resend / profile responses."""
+    payload: dict[str, Any] = {
+        "required_for_directory": directory_requires_email_verification(),
+        "sent": email_verification.get("sent", False),
+        "delivery": email_verification.get("delivery"),
+        "delivery_mode": email_verification.get("delivery_mode"),
+        "verify_endpoint": "POST /agents/verify-email",
+        "resend_endpoint": "POST /agents/me/resend-verification",
+        "expires_in_hours": email_verification.get("expires_in_hours"),
+        "message": email_verification.get("message"),
+        "status": email_verification.get("status") or build_email_verification_status(account),
+    }
+    if email_verification.get("queued"):
+        payload["queued"] = True
+    if email_verification.get("verify_link"):
+        payload["verify_link"] = email_verification["verify_link"]
+    if email_verification.get("smtp_error"):
+        payload["smtp_error"] = email_verification["smtp_error"]
+    if email_verification.get("error_code"):
+        payload["error_code"] = email_verification["error_code"]
+    if email_verification.get("next_step"):
+        payload["next_step"] = email_verification["next_step"]
+    if email_verification.get("delivery_blockers"):
+        payload["delivery_blockers"] = email_verification["delivery_blockers"]
+    if email_verification.get("operator_hint"):
+        payload["operator_hint"] = email_verification["operator_hint"]
+    if email_verification.get("production_delivery") is not None:
+        payload["production_delivery"] = email_verification["production_delivery"]
+    return payload
 
 
 def _resolve_authenticated_account(request: Request) -> dict[str, Any] | None:
@@ -185,6 +252,24 @@ def register_agent_account_routes(router: APIRouter) -> None:
         """Guided JSON flow for external agent registration and directory participation."""
         base_url = resolve_request_public_url(request)
         return build_agent_onboarding_guide(base_url=base_url)
+
+    @router.get("/agents/services")
+    @router.get("/discovery/services")
+    async def agents_service_catalog(
+        request: Request,
+        capability: str | None = Query(default=None),
+        q: str | None = Query(default=None),
+    ) -> dict[str, Any]:
+        """Machine-readable service catalog for autonomous agent discovery."""
+        from arclya2a.agents.service_catalog import build_service_catalog
+
+        base_url = resolve_request_public_url(request)
+        return build_service_catalog(
+            request.app.state.root,
+            base_url=base_url,
+            capability=capability,
+            q=q,
+        )
 
     @router.get("/agents/terms")
     async def agents_terms(request: Request) -> dict[str, Any]:
@@ -273,7 +358,19 @@ def register_agent_account_routes(router: APIRouter) -> None:
 
         updated, err = verify_email_token(request.app.state.root, token)
         if err:
-            return json_error(code="validation_error", message=err, status_code=422)
+            error_code = classify_verification_error(err)
+            hint = VERIFICATION_ERROR_HINTS.get(error_code, {})
+            return json_error(
+                code="verification_failed",
+                message=hint.get("message") or err,
+                details={
+                    "error_code": error_code,
+                    "reason": err,
+                    "next_step": hint.get("next_step"),
+                    "resend_endpoint": "POST /agents/me/resend-verification",
+                },
+                status_code=422,
+            )
 
         log_agent_email_verified(request.app.state.root, account=updated)
 
@@ -306,7 +403,10 @@ def register_agent_account_routes(router: APIRouter) -> None:
         return await agents_verify_email(request)
 
     @router.post("/agents/me/resend-verification")
-    async def agents_resend_verification(request: Request) -> dict[str, Any]:
+    async def agents_resend_verification(
+        request: Request,
+        background_tasks: BackgroundTasks,
+    ) -> dict[str, Any]:
         """Resend the email verification message for the authenticated agent."""
         account = _resolve_authenticated_account(request)
         if not account:
@@ -325,17 +425,38 @@ def register_agent_account_routes(router: APIRouter) -> None:
                 "message": "Email is already verified",
             }
         base_url = resolve_request_public_url(request)
-        delivery = queue_agent_email_verification(
-            request.app.state.root,
+        delivery = _schedule_email_verification(
+            request,
+            background_tasks,
             account=account,
             base_url=base_url,
         )
-        return {
-            "resent": True,
+        queued = bool((delivery or {}).get("queued"))
+        sent = bool((delivery or {}).get("sent"))
+        message = (delivery or {}).get("message") or (
+            "Verification email is being sent — check your inbox"
+            if queued
+            else ("Verification email sent — check your inbox" if sent else "Verification email was not delivered")
+        )
+        response: dict[str, Any] = {
+            "resent": sent or queued,
+            "queued": queued,
             "email": account.get("email"),
             "verification": delivery,
-            "message": "Verification email sent — check your inbox",
+            "message": message,
+            "email_verification": build_email_verification_status(account),
         }
+        if delivery and delivery.get("smtp_error"):
+            response["smtp_error"] = delivery["smtp_error"]
+        if delivery and delivery.get("error_code"):
+            response["error_code"] = delivery["error_code"]
+        if delivery and delivery.get("next_step"):
+            response["next_step"] = delivery["next_step"]
+        if delivery and delivery.get("delivery_blockers"):
+            response["delivery_blockers"] = delivery["delivery_blockers"]
+        if delivery and delivery.get("operator_hint"):
+            response["operator_hint"] = delivery["operator_hint"]
+        return response
 
     @router.get("/agents/manage")
     async def agents_manage(
@@ -514,7 +635,7 @@ def register_agent_account_routes(router: APIRouter) -> None:
         )
 
     @router.post("/agents/register")
-    async def agents_register(request: Request) -> dict[str, Any]:
+    async def agents_register(request: Request, background_tasks: BackgroundTasks) -> dict[str, Any]:
         """Self-service registration for external agents (no auth required)."""
         try:
             body = await request.json()
@@ -628,8 +749,9 @@ def register_agent_account_routes(router: APIRouter) -> None:
         welcome = build_registration_welcome(account, base_url=base_url)
         email_verification = None
         if account.get("email"):
-            email_verification = queue_agent_email_verification(
-                request.app.state.root,
+            email_verification = _schedule_email_verification(
+                request,
+                background_tasks,
                 account=account,
                 base_url=base_url,
             )
@@ -650,21 +772,7 @@ def register_agent_account_routes(router: APIRouter) -> None:
             **welcome,
         }
         if email_verification:
-            response["email_verification"] = {
-                "required_for_directory": directory_requires_email_verification(),
-                "sent": email_verification.get("sent", False),
-                "delivery": email_verification.get("delivery"),
-                "delivery_mode": email_verification.get("delivery_mode"),
-                "verify_endpoint": "POST /agents/verify-email",
-                "resend_endpoint": "POST /agents/me/resend-verification",
-                "expires_in_hours": email_verification.get("expires_in_hours"),
-                "message": email_verification.get("message"),
-                "status": email_verification.get("status") or build_email_verification_status(account),
-            }
-            if email_verification.get("verify_link"):
-                response["email_verification"]["verify_link"] = email_verification["verify_link"]
-            if email_verification.get("smtp_error"):
-                response["email_verification"]["smtp_error"] = email_verification["smtp_error"]
+            response["email_verification"] = _email_verification_api_payload(account, email_verification)
         elif directory_requires_email_verification():
             response["email_verification"] = {
                 **build_email_verification_status(account),
@@ -880,7 +988,7 @@ def register_agent_account_routes(router: APIRouter) -> None:
         }
 
     @router.patch("/agents/me")
-    async def agents_me_update(request: Request) -> dict[str, Any]:
+    async def agents_me_update(request: Request, background_tasks: BackgroundTasks) -> dict[str, Any]:
         """Update basic profile fields for the authenticated agent."""
         account = _resolve_authenticated_account(request)
         if not account:
@@ -990,8 +1098,9 @@ def register_agent_account_routes(router: APIRouter) -> None:
             )
         verification_queued = None
         if "email" in body and updated.get("email") and not updated.get("email_verified"):
-            verification_queued = queue_agent_email_verification(
-                request.app.state.root,
+            verification_queued = _schedule_email_verification(
+                request,
+                background_tasks,
                 account=updated,
                 base_url=resolve_request_public_url(request),
             )
@@ -1023,12 +1132,7 @@ def register_agent_account_routes(router: APIRouter) -> None:
             "listing_note": listing_note,
         }
         if verification_queued:
-            result["email_verification"] = {
-                "sent": verification_queued.get("sent", False),
-                "verify_endpoint": "POST /agents/verify-email",
-                "resend_endpoint": "POST /agents/me/resend-verification",
-                "message": "Verification email sent for the updated address",
-            }
+            result["email_verification"] = _email_verification_api_payload(updated, verification_queued)
         return result
 
     @router.get("/agents/{agent_id}/audit")
@@ -1184,9 +1288,14 @@ def register_agent_account_routes(router: APIRouter) -> None:
             "count": summary["count"],
             "latest": latest,
             "entries": summary["entries"],
+            "pending_verifications": summary.get("pending_verifications", []),
+            "pending_count": summary.get("pending_count", 0),
+            "delivery_stats": summary.get("delivery_stats", {}),
+            "delivery_mode_effective": summary.get("delivery_mode_effective"),
+            "delivery_blockers": summary.get("delivery_blockers", []),
             "hint": (
                 "Use latest.verify_link or latest.token for POST /agents/verify-email "
-                "during launch smoke tests"
+                "during launch smoke tests. pending_verifications lists agents awaiting verify."
             ),
         }
 

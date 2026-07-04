@@ -849,6 +849,7 @@ def create_app(
 
         ops = build_ops_status(app.state.root)
         components = ops.get("component_health", {})
+        email_h = components.get("email") or {}
         base = {
             "status": ops.get("status", "healthy"),
             "service": "arclya2a",
@@ -860,9 +861,18 @@ def create_app(
             "pending_high_risk_patches": ops.get("pending_high_risk_count", 0),
             "launch_ready": ops.get("launch_readiness", {}).get("ready", False),
             "components": {
-                "email": (components.get("email") or {}).get("status"),
+                "email": email_h.get("status"),
                 "crypto": (components.get("crypto") or {}).get("status"),
             },
+            "email_delivery": {
+                "mode": email_h.get("delivery_mode_effective"),
+                "provider": email_h.get("smtp_provider"),
+                "launch_ready": email_h.get("launch_ready", False),
+                "public_url": email_h.get("public_url"),
+                "public_url_source": email_h.get("public_url_source"),
+            },
+            "launch_blockers": (ops.get("launch_readiness") or {}).get("blocking_issues", []),
+            "launch_next_steps": components.get("next_steps", []),
             "external_agents": build_agent_platform_summary(app.state.root),
         }
         if detailed:

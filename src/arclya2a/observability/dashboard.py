@@ -20,6 +20,7 @@ def build_ops_dashboard(root: Path) -> dict[str, Any]:
     patches = build_patch_dashboard(root)
     security = build_security_metrics(root)
     partners = build_partner_funnel_metrics(root)
+    from arclya2a.agents.email_verification import operator_verification_outbox_summary
     from arclya2a.agents.feedback import build_feedback_ops_summary
 
     agent_audit = build_agent_audit_summary(root)
@@ -66,6 +67,7 @@ def build_ops_dashboard(root: Path) -> dict[str, Any]:
         "partners": partners,
         "agents": agent_audit,
         "agent_feedback": build_feedback_ops_summary(root),
+        "email_verification": operator_verification_outbox_summary(root, limit=10),
         "payments": ops.get("payments", {}),
         "server_events": server_events,
     }
@@ -218,6 +220,27 @@ def format_ops_dashboard_text(dashboard: dict[str, Any]) -> str:
                 f"    [{e.get('event_type', '?'):28}] "
                 f"agent={e.get('agent_id') or '-':14} "
                 f"suspicious={bool(e.get('suspicious'))}"
+            )
+
+    email_verify = dashboard.get("email_verification", {})
+    if email_verify:
+        stats = email_verify.get("delivery_stats") or {}
+        lines.extend([
+            "",
+            "── Email Verification ──",
+            f"  Delivery mode:         {email_verify.get('delivery_mode_effective', '?')}",
+            f"  Pending verifications: {email_verify.get('pending_count', 0)}",
+            f"  Outbox (smtp sent):    {stats.get('smtp', 0)} / outbox={stats.get('outbox', 0)}",
+            f"  SMTP failures logged:  {stats.get('smtp_failed', 0)}",
+            f"  Operator outbox:       GET /agents/operator/verification-outbox",
+        ])
+        for blocker in (email_verify.get("delivery_blockers") or [])[:2]:
+            lines.append(f"    ! {blocker}")
+        for row in (email_verify.get("pending_verifications") or [])[:3]:
+            lines.append(
+                f"    pending {row.get('agent_id', '?'):14} "
+                f"{row.get('email', '?'):28} "
+                f"delivery={row.get('latest_delivery') or '-'}"
             )
 
     feedback = dashboard.get("agent_feedback", {})
